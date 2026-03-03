@@ -20,28 +20,32 @@ OpenClaw Weibo DM channel plugin - 微博私信通道插件
 ### 安装插件
 ```
 git clone https://github.com/wecode-ai/openclaw-weibo.git
-cd openclaw-weibo && openclaw plugins install .
+cd openclaw-weibo && openclaw plugins install . && openclaw gateway restart
 ```
 
 ### 配置OpenClaw 
 
-编辑 `~/.openclaw/openclaw.config.json`：
-
-```json
-{
-  "channels": {
-    "weibo": {
-      "appId": "your-app-id",
-      "appSecret": "your-app-secret",
-    }
-  }
-}
-```
-或使用命令配置：
+使用命令配置：
 ```bash
 openclaw config set 'channels.weibo.appSecret' 'your-appSecret'
 openclaw config set 'channels.weibo.appId' 'your-appId'
 ```
+
+或编辑 `~/.openclaw/openclaw.config.json`：
+
+```json
+{
+...existing config...
+  "channels": {
+    ...existing config...
+    "weibo": {
+      "appId": "your-app-id",
+      "appSecret": "your-app-secret"
+    }
+  }
+}
+```
+
 
 ## License
 
