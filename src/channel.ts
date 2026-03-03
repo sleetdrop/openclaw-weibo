@@ -66,7 +66,7 @@ export const weiboPlugin: ChannelPlugin<ResolvedWeiboAccount> = {
         appSecret: { type: "string" },
         wsEndpoint: { type: "string", format: "uri" },
         tokenEndpoint: { type: "string", format: "uri" },
-        dmPolicy: { type: "string", enum: ["pairing"] },
+        dmPolicy: { type: "string", enum: ["open", "pairing"], default: "open" },
         allowFrom: { type: "array", items: { type: "string" } },
         textChunkLimit: { type: "integer", minimum: 1 },
         chunkMode: { type: "string", enum: ["length", "newline"] },

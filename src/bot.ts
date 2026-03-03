@@ -54,13 +54,14 @@ export async function handleWeiboMessage(params: HandleWeiboMessageParams): Prom
     return null;
   }
 
-  // Check allowlist
+  // Check allowlist (only in pairing mode)
+  const dmPolicy = account.config.dmPolicy ?? "open";
   const isAllowed = resolveWeiboAllowlistMatch({
     userId: fromUserId,
     allowFrom: account.config.allowFrom ?? [],
   });
 
-  if (!isAllowed) {
+  if (dmPolicy === "pairing" && !isAllowed) {
     log(`weibo[${accountId}]: message from ${fromUserId} not in allowlist`);
     // Return null to indicate message should not be processed
     // OpenClaw framework will handle pairing request
