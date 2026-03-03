@@ -1,10 +1,10 @@
 import { z } from "zod";
 export { z };
 
-const DmPolicySchema = z.enum(["pairing"]);
+const DmPolicySchema = z.enum(["open", "pairing"]).default("open");
 
 // Chunk mode: "length" = split by character limit, "newline" = split at newlines
-const ChunkModeSchema = z.enum(["length", "newline"]).optional();
+const ChunkModeSchema = z.enum(["length", "newline"]).default("newline");
 
 const WeiboSharedConfigShape = {
   dmPolicy: DmPolicySchema.optional(),

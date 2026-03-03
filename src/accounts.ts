@@ -26,9 +26,11 @@ export function resolveWeiboAccount({
       wsEndpoint: weiboCfg.wsEndpoint,
       tokenEndpoint: weiboCfg.tokenEndpoint,
       config: {
-        dmPolicy: weiboCfg.dmPolicy ?? "pairing",
+        dmPolicy: weiboCfg.dmPolicy ?? "open",
         allowFrom: weiboCfg.allowFrom ?? [],
         tokenEndpoint: weiboCfg.tokenEndpoint,
+        textChunkLimit: weiboCfg.textChunkLimit,
+        chunkMode: weiboCfg.chunkMode ?? "newline",
       },
     };
   }
@@ -41,6 +43,8 @@ export function resolveWeiboAccount({
     tokenEndpoint: weiboCfg?.tokenEndpoint,
     dmPolicy: weiboCfg?.dmPolicy,
     allowFrom: weiboCfg?.allowFrom,
+    textChunkLimit: weiboCfg?.textChunkLimit,
+    chunkMode: weiboCfg?.chunkMode,
   };
 
   const merged = {
@@ -48,8 +52,10 @@ export function resolveWeiboAccount({
     appSecret: accountCfg?.appSecret ?? topLevel.appSecret,
     wsEndpoint: accountCfg?.wsEndpoint ?? topLevel.wsEndpoint,
     tokenEndpoint: accountCfg?.tokenEndpoint ?? topLevel.tokenEndpoint,
-    dmPolicy: accountCfg?.dmPolicy ?? topLevel.dmPolicy ?? "pairing",
+    dmPolicy: accountCfg?.dmPolicy ?? topLevel.dmPolicy ?? "open",
     allowFrom: accountCfg?.allowFrom ?? topLevel.allowFrom ?? [],
+    textChunkLimit: accountCfg?.textChunkLimit ?? topLevel.textChunkLimit,
+    chunkMode: accountCfg?.chunkMode ?? topLevel.chunkMode ?? "newline",
   };
 
   const hasCredentials = !!(merged.appId && merged.appSecret);
@@ -67,6 +73,8 @@ export function resolveWeiboAccount({
       dmPolicy: merged.dmPolicy,
       allowFrom: merged.allowFrom,
       tokenEndpoint: merged.tokenEndpoint,
+      textChunkLimit: merged.textChunkLimit,
+      chunkMode: merged.chunkMode,
     },
   };
 }
