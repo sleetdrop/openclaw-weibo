@@ -17,14 +17,14 @@ OpenClaw Weibo DM channel plugin - 微博私信通道插件
    如需重置凭证，请发送 "重置凭证" 命令。
    ```
 
-### 安装插件
+### 配置OpenClaw 
+#### 安装插件
 ```
 git clone https://github.com/wecode-ai/openclaw-weibo.git
 cd openclaw-weibo && openclaw plugins install . && openclaw gateway restart
 ```
 
-### 配置OpenClaw 
-
+#### 配置凭证
 使用命令配置：
 ```bash
 openclaw config set 'channels.weibo.appSecret' 'your-appSecret'
