@@ -278,53 +278,113 @@ export const weiboPlugin: ChannelPlugin<ResolvedWeiboAccount> = {
     defaultRuntime: {
       accountId: DEFAULT_ACCOUNT_ID,
       running: false,
+      connected: false,
+      mode: "idle",
+      reconnectAttempts: 0,
+      lastConnectedAt: null,
+      lastDisconnect: null,
       lastStartAt: null,
       lastStopAt: null,
+      lastInboundAt: null,
+      lastOutboundAt: null,
       lastError: null,
       port: null,
-    },
+    } as never,
     buildChannelSummary: ({ snapshot }: { snapshot: Record<string, unknown> }) => ({
       configured: (snapshot.configured as boolean) ?? false,
       running: (snapshot.running as boolean) ?? false,
+      connected: (snapshot.connected as boolean) ?? false,
+      connectionState:
+        (snapshot.connectionState as string | null)
+        ?? (snapshot.mode as string | null)
+        ?? null,
+      reconnectAttempts: (snapshot.reconnectAttempts as number | null) ?? 0,
+      nextRetryAt: (snapshot.nextRetryAt as number | null) ?? null,
+      lastConnectedAt: (snapshot.lastConnectedAt as number | null) ?? null,
+      lastDisconnect: (snapshot.lastDisconnect as Record<string, unknown> | null) ?? null,
       lastStartAt: (snapshot.lastStartAt as number | null) ?? null,
       lastStopAt: (snapshot.lastStopAt as number | null) ?? null,
+      lastInboundAt: (snapshot.lastInboundAt as number | null) ?? null,
+      lastOutboundAt: (snapshot.lastOutboundAt as number | null) ?? null,
       lastError: (snapshot.lastError as string | null) ?? null,
       port: (snapshot.port as number | null) ?? null,
     }),
     probeAccount: async () => ({ ok: true }),
-    buildAccountSnapshot: ({
-      account,
-      runtime,
-    }: {
-      account: ResolvedWeiboAccount;
-      cfg: ClawdbotConfig;
-      runtime?: Record<string, unknown>;
-      probe?: unknown;
-      audit?: unknown;
-    }) => ({
-      accountId: account.accountId,
-      enabled: account.enabled,
-      configured: account.configured,
-      name: account.name,
-      appId: account.appId,
-      running: (runtime?.running as boolean) ?? false,
-      lastStartAt: (runtime?.lastStartAt as number | null) ?? null,
-      lastStopAt: (runtime?.lastStopAt as number | null) ?? null,
-      lastError: (runtime?.lastError as string | null) ?? null,
-      port: (runtime?.port as number | null) ?? null,
-    }),
+    buildAccountSnapshot: ({ account, runtime }) => {
+      const runtimeRecord = runtime as Record<string, unknown> | undefined;
+      const disconnect = runtime?.lastDisconnect as
+        | { at?: unknown; code?: unknown; reason?: unknown }
+        | string
+        | null
+        | undefined;
+
+      return {
+        accountId: account.accountId,
+        enabled: account.enabled,
+        configured: account.configured,
+        name: account.name,
+        appId: account.appId,
+        running: (runtime?.running as boolean) ?? false,
+        connected: (runtime?.connected as boolean) ?? false,
+        mode:
+          (runtimeRecord?.connectionState as string | null)
+          ?? (runtime?.mode as string | null)
+          ?? null,
+        reconnectAttempts: (runtime?.reconnectAttempts as number | null) ?? 0,
+        lastConnectedAt: (runtime?.lastConnectedAt as number | null) ?? null,
+        lastDisconnect:
+          disconnect && typeof disconnect === "object"
+            ? {
+                at: Number(disconnect.at ?? Date.now()),
+                status:
+                  typeof disconnect.code === "number" ? disconnect.code : undefined,
+                error:
+                  typeof disconnect.reason === "string" ? disconnect.reason : undefined,
+              }
+            : disconnect ?? null,
+        lastStartAt: (runtime?.lastStartAt as number | null) ?? null,
+        lastStopAt: (runtime?.lastStopAt as number | null) ?? null,
+        lastInboundAt: (runtime?.lastInboundAt as number | null) ?? null,
+        lastOutboundAt: (runtime?.lastOutboundAt as number | null) ?? null,
+        lastError: (runtime?.lastError as string | null) ?? null,
+        port: (runtime?.port as number | null) ?? null,
+        connectionState:
+          (runtimeRecord?.connectionState as string | null)
+          ?? (runtime?.mode as string | null)
+          ?? null,
+        nextRetryAt: (runtimeRecord?.nextRetryAt as number | null) ?? null,
+      } as never;
+    },
   },
 
   gateway: {
     startAccount: async (ctx) => {
       const { monitorWeiboProvider } = await import("./monitor.js");
-      ctx.setStatus({ accountId: ctx.accountId, port: null });
+      ctx.setStatus({
+        accountId: ctx.accountId,
+        port: null,
+        running: true,
+        connected: false,
+        mode: "connecting",
+        lastStartAt: Date.now(),
+        lastStopAt: null,
+        lastError: null,
+      } as never);
       ctx.log?.info(`starting weibo[${ctx.accountId}] WebSocket`);
       return monitorWeiboProvider({
         config: ctx.cfg,
         runtime: ctx.runtime,
         abortSignal: ctx.abortSignal,
         accountId: ctx.accountId,
+        statusSink: (patch) =>
+          ctx.setStatus({
+            accountId: ctx.accountId,
+            port: null,
+            ...patch,
+            mode:
+              (patch.connectionState as string | undefined)
+              ?? (ctx.getStatus().mode as string | undefined),
+          } as never),
       });
     },
   },

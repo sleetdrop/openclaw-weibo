@@ -1,7 +1,7 @@
 import http, { type IncomingMessage, type ServerResponse } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { createSimStore, type SimLogLevel, type SimMessageRecord } from "./src/sim-store.js";
-import { getLatestCredentialFromState } from "./src/sim-page.js";
+import { getLatestCredentialFromState, getSimPageEndpoints } from "./src/sim-page.js";
 
 const HTTP_PORT = 9810;
 const WS_PORT = 9999;
@@ -186,6 +186,10 @@ function renderPageHtml(): string {
   const latestCredential = getLatestCredentialFromState({
     credentials: store.listCredentials(),
   });
+  const initialEndpoints = getSimPageEndpoints({
+    pageOrigin: `http://127.0.0.1:${HTTP_PORT}`,
+    wsPort: WS_PORT,
+  });
   const initialAppId = latestCredential?.appId ?? "";
   const initialAppSecret = latestCredential?.appSecret ?? "";
   const initialCredentialDisplay = latestCredential
@@ -311,6 +315,12 @@ function renderPageHtml(): string {
         </section>
 
         <section class="card">
+          <h2>Endpoints</h2>
+          <div class="row"><input id="tokenUrlOutput" readonly value="${escapeHtmlAttr(initialEndpoints.tokenUrl)}" /></div>
+          <div class="row"><input id="wsUrlOutput" readonly value="${escapeHtmlAttr(initialEndpoints.wsUrl)}" /></div>
+        </section>
+
+        <section class="card">
           <h2>Send Message To Plugin (Inbound)</h2>
           <div class="row"><input id="inboundAppId" placeholder="app_id" value="${escapeHtmlAttr(initialAppId)}" /></div>
           <div class="row"><input id="inboundFrom" placeholder="from_user_id" value="123456789" /></div>
@@ -344,6 +354,8 @@ function renderPageHtml(): string {
 
       const tokenAppId = document.getElementById("tokenAppId");
       const tokenAppSecret = document.getElementById("tokenAppSecret");
+      const tokenUrlOutput = document.getElementById("tokenUrlOutput");
+      const wsUrlOutput = document.getElementById("wsUrlOutput");
 
       const inboundAppId = document.getElementById("inboundAppId");
       const inboundFrom = document.getElementById("inboundFrom");
@@ -351,6 +363,22 @@ function renderPageHtml(): string {
 
       function fmt(obj) {
         return JSON.stringify(obj, null, 2);
+      }
+
+      function getEndpoints() {
+        const origin = window.location.origin;
+        const url = new URL(origin);
+        const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:";
+        return {
+          tokenUrl: origin + "/open/auth/ws_token",
+          wsUrl: wsProtocol + "//" + url.hostname + ":9999/ws/stream",
+        };
+      }
+
+      function hydrateEndpoints() {
+        const endpoints = getEndpoints();
+        tokenUrlOutput.value = endpoints.tokenUrl;
+        wsUrlOutput.value = endpoints.wsUrl;
       }
 
       function addLogLine(entry) {
@@ -479,6 +507,7 @@ function renderPageHtml(): string {
       });
 
       async function initialLoad() {
+        hydrateEndpoints();
         await Promise.all([refreshState(), refreshMessages(), refreshLogs()]);
       }
 

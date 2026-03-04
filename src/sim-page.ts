@@ -11,6 +11,11 @@ export type LatestCredential = {
   appSecret: string;
 };
 
+export type SimPageEndpoints = {
+  tokenUrl: string;
+  wsUrl: string;
+};
+
 export function getLatestCredentialFromState(state: SimStateLike): LatestCredential | null {
   const credentials = Array.isArray(state.credentials) ? state.credentials : [];
   if (credentials.length === 0) {
@@ -32,4 +37,22 @@ export function getLatestCredentialFromState(state: SimStateLike): LatestCredent
   }
 
   return { appId, appSecret };
+}
+
+export function getSimPageEndpoints({
+  pageOrigin,
+  wsPort,
+}: {
+  pageOrigin: string;
+  wsPort: number;
+}): SimPageEndpoints {
+  const origin = new URL(pageOrigin);
+  const wsProtocol = origin.protocol === "https:" ? "wss:" : "ws:";
+  const tokenUrl = new URL("/open/auth/ws_token", origin).toString();
+  const wsUrl = `${wsProtocol}//${origin.hostname}:${wsPort}/ws/stream`;
+
+  return {
+    tokenUrl,
+    wsUrl,
+  };
 }
