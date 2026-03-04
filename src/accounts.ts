@@ -2,6 +2,16 @@ import type { ClawdbotConfig } from "openclaw/plugin-sdk";
 import type { WeiboConfig, ResolvedWeiboAccount } from "./types.js";
 
 const DEFAULT_ACCOUNT_ID = "default";
+const DEFAULT_WS_ENDPOINT = "ws://open-im.api.weibo.com/ws/stream";
+const DEFAULT_TOKEN_ENDPOINT = "http://open-im.api.weibo.com/open/auth/ws_token";
+
+function readOptionalNonBlankString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 export function resolveWeiboAccount({
   cfg,
@@ -13,26 +23,27 @@ export function resolveWeiboAccount({
   const weiboCfg = cfg.channels?.weibo as WeiboConfig | undefined;
 
   const isDefault = accountId === DEFAULT_ACCOUNT_ID;
-
-  const DEFAULT_WS_ENDPOINT = "ws://open-im.api.weibo.com/ws/stream";
-  const DEFAULT_TOKEN_ENDPOINT = "http://open-im.api.weibo.com/open/auth/ws_token";
+  const topLevelAppId = readOptionalNonBlankString(weiboCfg?.appId);
+  const topLevelAppSecret = readOptionalNonBlankString(weiboCfg?.appSecret);
+  const topLevelWsEndpoint = readOptionalNonBlankString(weiboCfg?.wsEndpoint);
+  const topLevelTokenEndpoint = readOptionalNonBlankString(weiboCfg?.tokenEndpoint);
 
   if (isDefault && weiboCfg) {
-    const hasCredentials = !!(weiboCfg.appId && weiboCfg.appSecret);
+    const hasCredentials = !!(topLevelAppId && topLevelAppSecret);
     return {
       accountId: DEFAULT_ACCOUNT_ID,
       enabled: weiboCfg.enabled ?? true,
       configured: hasCredentials,
       name: "Default",
-      appId: weiboCfg.appId,
-      appSecret: weiboCfg.appSecret,
-      wsEndpoint: weiboCfg.wsEndpoint ?? DEFAULT_WS_ENDPOINT,
-      tokenEndpoint: weiboCfg.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT,
+      appId: topLevelAppId,
+      appSecret: topLevelAppSecret,
+      wsEndpoint: topLevelWsEndpoint ?? DEFAULT_WS_ENDPOINT,
+      tokenEndpoint: topLevelTokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT,
       config: {
         dmPolicy: weiboCfg.dmPolicy ?? "open",
         allowFrom: weiboCfg.allowFrom ?? [],
-        tokenEndpoint: weiboCfg.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT,
-        wsEndpoint: weiboCfg.wsEndpoint ?? DEFAULT_WS_ENDPOINT,
+        tokenEndpoint: topLevelTokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT,
+        wsEndpoint: topLevelWsEndpoint ?? DEFAULT_WS_ENDPOINT,
         textChunkLimit: weiboCfg.textChunkLimit,
         chunkMode: weiboCfg.chunkMode ?? "newline",
       },
@@ -41,10 +52,10 @@ export function resolveWeiboAccount({
 
   const accountCfg = weiboCfg?.accounts?.[accountId];
   const topLevel = {
-    appId: weiboCfg?.appId,
-    appSecret: weiboCfg?.appSecret,
-    wsEndpoint: weiboCfg?.wsEndpoint,
-    tokenEndpoint: weiboCfg?.tokenEndpoint,
+    appId: topLevelAppId,
+    appSecret: topLevelAppSecret,
+    wsEndpoint: topLevelWsEndpoint,
+    tokenEndpoint: topLevelTokenEndpoint,
     dmPolicy: weiboCfg?.dmPolicy,
     allowFrom: weiboCfg?.allowFrom,
     textChunkLimit: weiboCfg?.textChunkLimit,
@@ -52,10 +63,16 @@ export function resolveWeiboAccount({
   };
 
   const merged = {
-    appId: accountCfg?.appId ?? topLevel.appId,
-    appSecret: accountCfg?.appSecret ?? topLevel.appSecret,
-    wsEndpoint: accountCfg?.wsEndpoint ?? topLevel.wsEndpoint ?? DEFAULT_WS_ENDPOINT,
-    tokenEndpoint: accountCfg?.tokenEndpoint ?? topLevel.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT,
+    appId: readOptionalNonBlankString(accountCfg?.appId) ?? topLevel.appId,
+    appSecret: readOptionalNonBlankString(accountCfg?.appSecret) ?? topLevel.appSecret,
+    wsEndpoint:
+      readOptionalNonBlankString(accountCfg?.wsEndpoint)
+      ?? topLevel.wsEndpoint
+      ?? DEFAULT_WS_ENDPOINT,
+    tokenEndpoint:
+      readOptionalNonBlankString(accountCfg?.tokenEndpoint)
+      ?? topLevel.tokenEndpoint
+      ?? DEFAULT_TOKEN_ENDPOINT,
     dmPolicy: accountCfg?.dmPolicy ?? topLevel.dmPolicy ?? "open",
     allowFrom: accountCfg?.allowFrom ?? topLevel.allowFrom ?? [],
     textChunkLimit: accountCfg?.textChunkLimit ?? topLevel.textChunkLimit,

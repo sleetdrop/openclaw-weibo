@@ -1,11 +1,18 @@
 import WebSocket from "ws";
-import type { ResolvedWeiboAccount } from "./types.js";
-import { getValidToken, clearTokenCache } from "./token.js";
+import type { ResolvedWeiboAccount, WeiboRuntimeStatusPatch } from "./types.js";
+import {
+  getValidToken,
+  clearTokenCache,
+  formatWeiboTokenFetchErrorMessage,
+  isRetryableWeiboTokenFetchError,
+} from "./token.js";
+import { getWeiboConnectionFingerprint } from "./fingerprint.js";
 
 export type WebSocketMessageHandler = (data: unknown) => void;
 export type WebSocketErrorHandler = (error: Error) => void;
 export type WebSocketCloseHandler = (code: number, reason: string) => void;
 export type WebSocketOpenHandler = () => void;
+export type WebSocketStatusHandler = (patch: WeiboRuntimeStatusPatch) => void;
 
 // Ping interval: 30 seconds
 const PING_INTERVAL_MS = 30_000;
@@ -21,9 +28,26 @@ export type WeiboClientOptions = {
   onError?: WebSocketErrorHandler;
   onClose?: WebSocketCloseHandler;
   onOpen?: WebSocketOpenHandler;
+  onStatus?: WebSocketStatusHandler;
   autoReconnect?: boolean;
   maxReconnectAttempts?: number;
 };
+
+function isRetryableConnectError(err: unknown): boolean {
+  const retryableTokenError = isRetryableWeiboTokenFetchError(err);
+  if (retryableTokenError !== null) {
+    return retryableTokenError;
+  }
+
+  if (err instanceof Error) {
+    const message = err.message.toLowerCase();
+    if (message.includes("not configured")) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 export class WeiboWebSocketClient {
   private ws: WebSocket | null = null;
@@ -31,6 +55,7 @@ export class WeiboWebSocketClient {
   private errorHandler: WebSocketErrorHandler | null = null;
   private closeHandler: WebSocketCloseHandler | null = null;
   private openHandler: WebSocketOpenHandler | null = null;
+  private statusHandler: WebSocketStatusHandler | null = null;
 
   // Heartbeat
   private pingInterval: NodeJS.Timeout | null = null;
@@ -55,6 +80,11 @@ export class WeiboWebSocketClient {
     this.errorHandler = options.onError ?? null;
     this.closeHandler = options.onClose ?? null;
     this.openHandler = options.onOpen ?? null;
+    this.statusHandler = options.onStatus ?? null;
+  }
+
+  private emitStatus(patch: WeiboRuntimeStatusPatch): void {
+    this.statusHandler?.(patch);
   }
 
   async connect(): Promise<void> {
@@ -64,6 +94,13 @@ export class WeiboWebSocketClient {
 
     this.isConnecting = true;
     this.shouldReconnect = true;
+    this.emitStatus({
+      running: true,
+      connected: false,
+      connectionState: "connecting",
+      nextRetryAt: null,
+      lastError: null,
+    });
 
     const { wsEndpoint, appId, tokenEndpoint } = this.account;
 
@@ -96,6 +133,15 @@ export class WeiboWebSocketClient {
         this.reconnectAttempts = 0;
         this.lastPongTime = Date.now();
         this.startHeartbeat();
+        this.emitStatus({
+          running: true,
+          connected: true,
+          connectionState: "connected",
+          reconnectAttempts: 0,
+          nextRetryAt: null,
+          lastConnectedAt: Date.now(),
+          lastError: null,
+        });
         this.openHandler?.();
       });
 
@@ -117,6 +163,12 @@ export class WeiboWebSocketClient {
       });
 
       this.ws.on("error", (err) => {
+        this.emitStatus({
+          running: true,
+          connected: false,
+          connectionState: "error",
+          lastError: err.message,
+        });
         this.errorHandler?.(err);
       });
 
@@ -124,11 +176,25 @@ export class WeiboWebSocketClient {
         this.isConnecting = false;
         this.stopHeartbeat();
         const reasonStr = reason.toString() || "unknown";
+        if (code === 4002 || /invalid token/i.test(reasonStr)) {
+          clearTokenCache(this.account.accountId);
+        }
+        this.emitStatus({
+          running: this.shouldReconnect,
+          connected: false,
+          connectionState:
+            this.shouldReconnect && this.autoReconnect ? "error" : "stopped",
+          lastDisconnect: {
+            code,
+            reason: reasonStr,
+            at: Date.now(),
+          },
+        });
         this.closeHandler?.(code, reasonStr);
 
         // Auto reconnect if enabled
         if (this.shouldReconnect && this.autoReconnect) {
-          this.scheduleReconnect();
+          this.scheduleReconnect(reasonStr);
         }
       });
 
@@ -137,9 +203,18 @@ export class WeiboWebSocketClient {
       });
     } catch (err) {
       this.isConnecting = false;
+      const message =
+        formatWeiboTokenFetchErrorMessage(err)
+        ?? (err instanceof Error ? err.message : String(err));
+      this.emitStatus({
+        running: true,
+        connected: false,
+        connectionState: "error",
+        lastError: message,
+      });
       // Schedule reconnect on connection failure
-      if (this.shouldReconnect && this.autoReconnect) {
-        this.scheduleReconnect();
+      if (this.shouldReconnect && this.autoReconnect && isRetryableConnectError(err)) {
+        this.scheduleReconnect(message);
       }
       throw err;
     }
@@ -181,7 +256,7 @@ export class WeiboWebSocketClient {
     }
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(lastError?: string): void {
     if (this.reconnectTimeout) {
       return;
     }
@@ -204,6 +279,14 @@ export class WeiboWebSocketClient {
     );
 
     this.reconnectAttempts++;
+    this.emitStatus({
+      running: true,
+      connected: false,
+      connectionState: "backoff",
+      reconnectAttempts: this.reconnectAttempts,
+      nextRetryAt: Date.now() + delay,
+      lastError: lastError ?? null,
+    });
 
     console.log(
       `weibo[${this.account.accountId}]: reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`
@@ -234,6 +317,10 @@ export class WeiboWebSocketClient {
 
   onOpen(handler: WebSocketOpenHandler): void {
     this.openHandler = handler;
+  }
+
+  onStatus(handler: WebSocketStatusHandler): void {
+    this.statusHandler = handler;
   }
 
   send(data: unknown): boolean {
@@ -267,35 +354,75 @@ export class WeiboWebSocketClient {
 
     this.ws?.close();
     this.ws = null;
+    this.emitStatus({
+      running: false,
+      connected: false,
+      connectionState: "stopped",
+      nextRetryAt: null,
+      lastStopAt: Date.now(),
+    });
+  }
+}
+
+type ClientCacheEntry = {
+  client: WeiboWebSocketClient;
+  fingerprint: string;
+};
+
+function applyOptions(client: WeiboWebSocketClient, options?: WeiboClientOptions): void {
+  if (!options) {
+    return;
+  }
+  if (options.onMessage) {
+    client.onMessage(options.onMessage);
+  }
+  if (options.onError) {
+    client.onError(options.onError);
+  }
+  if (options.onClose) {
+    client.onClose(options.onClose);
+  }
+  if (options.onOpen) {
+    client.onOpen(options.onOpen);
+  }
+  if (options.onStatus) {
+    client.onStatus(options.onStatus);
   }
 }
 
 // Client cache for reusing connections
-const clientCache = new Map<string, WeiboWebSocketClient>();
+const clientCache = new Map<string, ClientCacheEntry>();
 
 export function createWeiboClient(
   account: ResolvedWeiboAccount,
   options?: WeiboClientOptions
 ): WeiboWebSocketClient {
+  const fingerprint = getWeiboConnectionFingerprint(account);
   const cached = clientCache.get(account.accountId);
   if (cached) {
-    return cached;
+    if (cached.fingerprint === fingerprint) {
+      applyOptions(cached.client, options);
+      return cached.client;
+    }
+    cached.client.close();
+    clearTokenCache(account.accountId);
+    clientCache.delete(account.accountId);
   }
   const client = new WeiboWebSocketClient(account, options);
-  clientCache.set(account.accountId, client);
+  clientCache.set(account.accountId, { client, fingerprint });
   return client;
 }
 
 export function clearClientCache(accountId?: string): void {
   if (accountId) {
-    const client = clientCache.get(accountId);
-    if (client) {
-      client.close();
+    const cached = clientCache.get(accountId);
+    if (cached) {
+      cached.client.close();
       clientCache.delete(accountId);
     }
   } else {
-    for (const client of clientCache.values()) {
-      client.close();
+    for (const cached of clientCache.values()) {
+      cached.client.close();
     }
     clientCache.clear();
   }

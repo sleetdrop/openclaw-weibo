@@ -54,6 +54,25 @@ describe("resolveWeiboAccount", () => {
     const account = resolveWeiboAccount({ cfg, accountId: "default" });
     expect(account.configured).toBe(false);
   });
+
+  it("falls back to default endpoints when hot-reload leaves endpoint fields as empty strings", () => {
+    const cfg: ClawdbotConfig = {
+      channels: {
+        weibo: {
+          appId: "test-app-id",
+          appSecret: "test-secret",
+          wsEndpoint: "",
+          tokenEndpoint: "",
+        },
+      },
+    };
+
+    const account = resolveWeiboAccount({ cfg, accountId: "default" });
+    expect(account.wsEndpoint).toBe("ws://open-im.api.weibo.com/ws/stream");
+    expect(account.tokenEndpoint).toBe("http://open-im.api.weibo.com/open/auth/ws_token");
+    expect(account.config.wsEndpoint).toBe("ws://open-im.api.weibo.com/ws/stream");
+    expect(account.config.tokenEndpoint).toBe("http://open-im.api.weibo.com/open/auth/ws_token");
+  });
 });
 
 describe("listWeiboAccountIds", () => {
