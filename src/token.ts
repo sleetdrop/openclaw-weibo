@@ -28,7 +28,7 @@ const tokenCache = new Map<string, CachedWeiboTokenResult>();
 
 // Default token endpoint - configure in your openclaw.config.json
 // Example: tokenEndpoint: "http://localhost:9810/open/auth/ws_token"
-const DEFAULT_TOKEN_ENDPOINT = "http://localhost:9810/open/auth/ws_token";
+const DEFAULT_TOKEN_ENDPOINT = "http://open-im.api.weibo.com/open/auth/ws_token";
 
 export class WeiboTokenFetchError extends Error {
   retryable: boolean;
@@ -44,6 +44,14 @@ export class WeiboTokenFetchError extends Error {
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readTokenEndpoint(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -88,7 +96,7 @@ export async function fetchWeiboToken(
   const normalizedAppId = String(appId);
   const normalizedAppSecret = String(appSecret);
 
-  const endpoint = tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT;
+  const endpoint = readTokenEndpoint(tokenEndpoint) ?? DEFAULT_TOKEN_ENDPOINT;
   const fingerprint = getWeiboTokenFingerprint(account, endpoint);
 
   for (let attempt = 0; ; attempt++) {
@@ -184,7 +192,7 @@ export async function getValidToken(
 ): Promise<string> {
   const fingerprint = getWeiboTokenFingerprint(
     account,
-    tokenEndpoint ?? account.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT
+    readTokenEndpoint(tokenEndpoint) ?? readTokenEndpoint(account.tokenEndpoint) ?? DEFAULT_TOKEN_ENDPOINT
   );
 
   // Try to get cached token
@@ -194,6 +202,6 @@ export async function getValidToken(
   }
 
   // Fetch new token
-  const result = await fetchWeiboToken(account, tokenEndpoint);
+  const result = await fetchWeiboToken(account, readTokenEndpoint(tokenEndpoint));
   return result.token;
 }

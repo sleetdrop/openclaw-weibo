@@ -162,4 +162,27 @@ describe("fetchWeiboToken", () => {
     await expect(fetchWeiboToken(makeAccount(), "https://example.com/token")).rejects.toThrow(/401/);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
+
+  it("falls back to the production default token endpoint when the configured endpoint is blank", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            token: "token-1",
+            expire_in: 3600,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    await getValidToken(makeAccount({ tokenEndpoint: "" }), "");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://open-im.api.weibo.com/open/auth/ws_token",
+      expect.any(Object),
+    );
+  });
 });
