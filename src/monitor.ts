@@ -92,7 +92,6 @@ async function monitorSingleAccount(params: {
       },
     });
     log(`weibo[${accountId}]: WebSocket closed (code: ${code}, reason: ${reason})`);
-    wsClients.delete(accountId);
   });
 
   // Handle abort signal

@@ -2,6 +2,7 @@ import type { ClawdbotConfig, RuntimeEnv } from "openclaw/plugin-sdk";
 import type { WeiboMessageContext } from "./types.js";
 import { resolveWeiboAccount } from "./accounts.js";
 import { getWeiboRuntime } from "./runtime.js";
+import { resolveWeiboAllowlistMatch } from "./policy.js";
 
 // Simple in-memory dedup
 const processedMessages = new Set<string>();
@@ -48,6 +49,13 @@ export async function handleWeiboMessage(params: HandleWeiboMessageParams): Prom
   }
 
   const { messageId, fromUserId, text, timestamp } = event.payload;
+
+  // Enforce DM policy
+  const { dmPolicy, allowFrom } = account.config;
+  if (dmPolicy === "pairing" && !resolveWeiboAllowlistMatch({ userId: fromUserId, allowFrom: allowFrom ?? [] })) {
+    log(`weibo[${accountId}]: rejected DM from ${fromUserId} (dmPolicy=pairing, not in allowFrom)`);
+    return null;
+  }
 
   // Deduplication
   if (isDuplicate(messageId)) {
