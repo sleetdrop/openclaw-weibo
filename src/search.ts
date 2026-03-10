@@ -1,9 +1,5 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { listEnabledWeiboAccounts, resolveWeiboAccount } from "./accounts.js";
 import { WeiboSearchSchema, type WeiboSearchParams } from "./search-schema.js";
-import { getValidToken } from "./token.js";
-import { resolveAnyEnabledWeiboToolsConfig } from "./tools-config.js";
-import type { ResolvedWeiboAccount } from "./types.js";
 
 // ============ Helpers ============
 
@@ -16,6 +12,31 @@ function json(data: unknown) {
 
 // ============ API Types ============
 
+/**
+ * 微博搜索 API 响应结构
+ * API: http://dmtest.api.weibo.com/open/wis/search_by_sid
+ */
+export type WeiboSearchApiResponse = {
+  code: number;
+  message: string;
+  data: {
+    analyzing: boolean;
+    completed: boolean;
+    msg: string;
+    msg_format: string;
+    msg_json: string;
+    noContent: boolean;
+    profile_image_url: string;
+    reference_num: number;
+    refused: boolean;
+    scheme: string;
+    status: number;
+    status_stage: number;
+    version: string;
+  };
+};
+
+// 保留旧类型以兼容可能的其他 API 格式
 export type WeiboSearchStatusItem = {
   id: string;
   mid: string;
@@ -49,21 +70,26 @@ export type WeiboSearchResponse = {
 
 // ============ Core Functions ============
 
-const SEARCH_ENDPOINT = "http://10.54.18.236:9011/open/wis/search_by_sid";
+// 默认搜索端点（不需要认证）
+const DEFAULT_SEARCH_ENDPOINT = "http://dmtest.api.weibo.com/open/wis/search_by_sid";
+// 默认 SID
+const DEFAULT_SID = "v_openclaw_social";
 
+/**
+ * 搜索微博内容
+ * 使用 SID 方式访问，不需要 OAuth 认证
+ */
 async function searchWeibo(
-  account: ResolvedWeiboAccount,
   query: string,
-  count: number = 20,
-  page: number = 1
-): Promise<WeiboSearchResponse> {
-  const token = await getValidToken(account);
+  searchEndpoint?: string,
+  sid?: string
+): Promise<WeiboSearchApiResponse> {
+  const endpoint = searchEndpoint || DEFAULT_SEARCH_ENDPOINT;
+  const searchSid = sid || DEFAULT_SID;
 
-  const url = new URL(SEARCH_ENDPOINT);
-  url.searchParams.set("access_token", token);
+  const url = new URL(endpoint);
   url.searchParams.set("query", query);
-  url.searchParams.set("count", String(Math.min(count, 50)));
-  url.searchParams.set("page", String(page));
+  url.searchParams.set("sid", searchSid);
 
   const response = await fetch(url.toString(), {
     method: "GET",
@@ -79,88 +105,98 @@ async function searchWeibo(
     );
   }
 
-  const result = (await response.json()) as WeiboSearchResponse;
+  const result = (await response.json()) as WeiboSearchApiResponse;
   return result;
 }
 
-function formatSearchResult(result: WeiboSearchResponse) {
-  const statuses = result.statuses.map((status) => ({
-    id: status.id,
-    mid: status.mid,
-    text: status.text,
-    created_at: status.created_at,
-    source: status.source,
-    user: {
-      id: status.user.id,
-      screen_name: status.user.screen_name,
-      verified: status.user.verified,
-      followers_count: status.user.followers_count,
-    },
-    reposts_count: status.reposts_count,
-    comments_count: status.comments_count,
-    attitudes_count: status.attitudes_count,
-    has_images: (status.pic_urls?.length ?? 0) > 0,
-    is_retweet: !!status.retweeted_status,
-  }));
+/**
+ * 格式化搜索结果
+ */
+function formatSearchResult(result: WeiboSearchApiResponse) {
+  if (result.code !== 0) {
+    return {
+      success: false,
+      error: result.message || "搜索失败",
+    };
+  }
+
+  const data = result.data;
+
+  // 如果没有内容
+  if (data.noContent) {
+    return {
+      success: true,
+      completed: data.completed,
+      noContent: true,
+      message: "没有找到相关内容",
+    };
+  }
+
+  // 如果被拒绝
+  if (data.refused) {
+    return {
+      success: false,
+      error: "搜索请求被拒绝",
+    };
+  }
 
   return {
-    total_number: result.total_number,
-    count: statuses.length,
-    statuses,
+    success: true,
+    completed: data.completed,
+    analyzing: data.analyzing,
+    content: data.msg,
+    contentFormat: data.msg_format,
+    referenceCount: data.reference_num,
+    scheme: data.scheme,
+    version: data.version,
+  };
+}
+
+// ============ Configuration Types ============
+
+export type WeiboSearchConfig = {
+  /** 搜索 API 端点，默认为 dmtest.api.weibo.com */
+  searchEndpoint?: string;
+  /** SID 标识符，默认为 v_openclaw_social */
+  sid?: string;
+  /** 是否启用搜索工具，默认为 true */
+  enabled?: boolean;
+};
+
+function getSearchConfig(api: OpenClawPluginApi): WeiboSearchConfig {
+  const weiboCfg = api.config?.channels?.weibo as Record<string, unknown> | undefined;
+  return {
+    searchEndpoint: weiboCfg?.searchEndpoint as string | undefined,
+    sid: weiboCfg?.sid as string | undefined,
+    enabled: weiboCfg?.searchEnabled !== false,
   };
 }
 
 // ============ Tool Registration ============
 
 export function registerWeiboSearchTools(api: OpenClawPluginApi) {
-  if (!api.config) {
-    api.logger.debug?.("weibo_search: No config available, skipping tool registration");
-    return;
-  }
+  const searchCfg = getSearchConfig(api);
 
-  // Check if any account is configured
-  const accounts = listEnabledWeiboAccounts(api.config);
-  if (accounts.length === 0) {
-    api.logger.debug?.("weibo_search: No Weibo accounts configured, skipping tool registration");
-    return;
-  }
-
-  // Check if search tool is enabled on any account
-  const toolsCfg = resolveAnyEnabledWeiboToolsConfig(accounts);
-  if (!toolsCfg.search) {
+  // 检查是否禁用了搜索工具
+  if (!searchCfg.enabled) {
     api.logger.debug?.("weibo_search: Search tool disabled, skipping registration");
     return;
   }
 
-  type ExecuteParams = WeiboSearchParams & { accountId?: string };
-
-  const getAccount = (params: { accountId?: string } | undefined, defaultAccountId?: string) => {
-    const accountId = params?.accountId?.trim() || defaultAccountId || "default";
-    return resolveWeiboAccount({ cfg: api.config, accountId });
-  };
-
   api.registerTool(
-    (ctx) => ({
+    () => ({
       name: "weibo_search",
       label: "Weibo Search",
       description:
-        "搜索微博内容。返回匹配关键词的微博列表，包含作者信息、互动数据等。",
+        "搜索微博内容。返回 AI 生成的搜索结果摘要。不需要认证。",
       parameters: WeiboSearchSchema,
       async execute(_toolCallId, params) {
-        const p = params as ExecuteParams;
+        const p = params as WeiboSearchParams;
         try {
-          const account = getAccount(p, ctx.agentAccountId);
-          if (!account.configured) {
-            return json({
-              error: `微博账号 "${account.accountId}" 未配置凭据。请在 openclaw.config.json 中配置 channels.weibo.appId 和 channels.weibo.appSecret`,
-            });
-          }
-
           const result = await searchWeibo(
-            account,
             p.query,
-            p.count ?? 20,
-            p.page ?? 1
+            searchCfg.searchEndpoint,
+            searchCfg.sid
           );
 
           return json(formatSearchResult(result));
