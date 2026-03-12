@@ -17,6 +17,7 @@ export const WeiboToolsConfigSchema = z
   .object({
     search: z.boolean().optional(), // Search operations (default: true)
     myWeibo: z.boolean().optional(), // My weibo operations (default: true)
+    hotSearch: z.boolean().optional(), // Hot search operations (default: true)
   })
   .strict()
   .optional();

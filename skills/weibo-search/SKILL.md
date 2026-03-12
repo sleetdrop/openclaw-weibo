@@ -79,21 +79,6 @@ description: |
 { "query": "科技新闻" }
 ```
 
-## 配置（可选）
-
-
-
-```json
-{
-  "channels": {
-    "weibo": {
-      "weiboSearchEndpoint": "http://open-im.api.weibo.com/open/wis/search_query",
-      "weiboSearchEnabled": true
-    }
-  }
-}
-```
-
 ### 配置项说明
 
 | 配置项 | 类型 | 必填 | 默认值 | 说明 |
