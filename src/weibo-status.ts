@@ -6,15 +6,60 @@ import { Type, type Static } from "@sinclair/typebox";
 export const WeiboStatusSchema = Type.Object({
   count: Type.Optional(
     Type.Number({
-      description: "返回的微博数量，默认为 20",
+      description: "每页数量，最大 25，默认 20",
       minimum: 1,
-      maximum: 100,
+      maximum: 25,
     })
   ),
   page: Type.Optional(
     Type.Number({
       description: "页码，默认为 1",
       minimum: 1,
+    })
+  ),
+  screen_name: Type.Optional(
+    Type.String({
+      description: "用户昵称（可选）",
+    })
+  ),
+  start_time: Type.Optional(
+    Type.Number({
+      description: "返回发博时间比 start_time 大的微博（Unix 时间戳，秒）",
+    })
+  ),
+  end_time: Type.Optional(
+    Type.Number({
+      description: "返回发博时间小于或等于 end_time 的微博（Unix 时间戳，秒）",
+    })
+  ),
+  stat_date: Type.Optional(
+    Type.String({
+      description: "指定发博月份，格式 yyyyMM",
+      pattern: "^\\d{6}$",
+    })
+  ),
+  feature: Type.Optional(
+    Type.Number({
+      description: "过滤类型：0-全部，1-原创，2-图片，3-视频等",
+      enum: [0, 1, 2, 3],
+    })
+  ),
+  visible: Type.Optional(
+    Type.Number({
+      description: "可见性：0-全部，1-所有人可见，2-仅自己可见等",
+      enum: [0, 1, 2],
+    })
+  ),
+  trim_user: Type.Optional(
+    Type.Number({
+      description: "user 字段开关：0-完整，1-仅 uid",
+      enum: [0, 1],
+    })
+  ),
+  fetch_data_only: Type.Optional(
+    Type.Number({
+      description: "是否仅获取数据：1-不记录曝光日志",
+      enum: [0, 1],
     })
   ),
 });
@@ -33,6 +78,81 @@ function json(data: unknown) {
 // ============ API Types ============
 
 /**
+ * 用户信息结构
+ */
+export type WeiboStatusUser = {
+  id: number;
+  idstr?: string;
+  screen_name: string;
+  name?: string;
+  description?: string;
+  profile_image_url?: string;
+  cover_image_phone?: string;
+  followers_count_str?: string;
+  friends_count?: number;
+  statuses_count?: number;
+  credit_score?: number;
+  created_at?: string;
+  verified_reason?: string;
+  verified_detail?: {
+    data?: Array<{
+      sub_key: number;
+      weight: number;
+      key: number;
+      desc: string;
+    }>;
+    custom?: number;
+  };
+  status_total_counter?: {
+    total_cnt: number;
+    repost_cnt: number;
+    comment_like_cnt: number;
+    like_cnt: number;
+    comment_cnt: number;
+  };
+  follow_me?: boolean;
+  remark?: string;
+  vvip?: number;
+  svip?: number;
+  is_big?: number;
+  chaohua_ability?: number;
+};
+
+/**
+ * 可见性结构
+ */
+export type WeiboStatusVisible = {
+  type: number;
+  list_id: number;
+};
+
+/**
+ * 微博状态项结构
+ */
+export type WeiboStatusItem = {
+  id: number;
+  mid: string;
+  text: string;
+  source: string;
+  created_at: string;
+  region_name?: string;
+  pic_ids?: string[];
+  pic_num?: number;
+  thumbnail_pic?: string;
+  bmiddle_pic?: string;
+  original_pic?: string;
+  visible?: WeiboStatusVisible;
+  user?: WeiboStatusUser;
+  retweeted_status?: WeiboStatusItem;
+  more_info_type?: number;
+  number_display_strategy?: {
+    apply_scenario_flag: number;
+    display_text_min_number: number;
+    display_text: string;
+  };
+};
+
+/**
  * 用户微博 API 响应结构
  * API: http://open-im.api.weibo.com/open/weibo/user_status
  */
@@ -42,22 +162,7 @@ export type WeiboStatusApiResponse = {
   data: {
     statuses: WeiboStatusItem[];
     total_number: number;
-    previous_cursor: number;
-    next_cursor: number;
   };
-};
-
-export type WeiboStatusItem = {
-  id: string;
-  mid: string;
-  text: string;
-  source: string;
-  created_at: string;
-  reposts_count: number;
-  comments_count: number;
-  attitudes_count: number;
-  pic_urls?: Array<{ thumbnail_pic: string }>;
-  retweeted_status?: WeiboStatusItem;
 };
 
 // ============ Token Management ============
@@ -162,26 +267,65 @@ async function getValidWeiboStatusToken(
 const DEFAULT_WEIBO_STATUS_ENDPOINT = "http://open-im.api.weibo.com/open/weibo/user_status";
 
 /**
+ * 获取用户自己发布的微博请求参数
+ */
+type FetchWeiboStatusOptions = {
+  token: string;
+  count?: number;
+  page?: number;
+  screenName?: string;
+  startTime?: number;
+  endTime?: number;
+  statDate?: string;
+  feature?: number;
+  visible?: number;
+  trimUser?: number;
+  fetchDataOnly?: number;
+  endpoint?: string;
+};
+
+/**
  * 获取用户自己发布的微博
  * 使用 token 认证方式访问
  */
 async function fetchWeiboStatus(
-  token: string,
-  count?: number,
-  page?: number,
-  endpoint?: string
+  options: FetchWeiboStatusOptions
 ): Promise<WeiboStatusApiResponse> {
-  const apiEndpoint = endpoint || DEFAULT_WEIBO_STATUS_ENDPOINT;
+  const apiEndpoint = options.endpoint || DEFAULT_WEIBO_STATUS_ENDPOINT;
 
   const url = new URL(apiEndpoint);
-  url.searchParams.set("token", token);
-  if (count !== undefined) {
-    url.searchParams.set("count", String(count));
+  url.searchParams.set("token", options.token);
+  
+  if (options.count !== undefined) {
+    url.searchParams.set("count", String(options.count));
   }
-  if (page !== undefined) {
-    url.searchParams.set("page", String(page));
+  if (options.page !== undefined) {
+    url.searchParams.set("page", String(options.page));
   }
-
+  if (options.screenName !== undefined) {
+    url.searchParams.set("screen_name", options.screenName);
+  }
+  if (options.startTime !== undefined) {
+    url.searchParams.set("start_time", String(options.startTime));
+  }
+  if (options.endTime !== undefined) {
+    url.searchParams.set("end_time", String(options.endTime));
+  }
+  if (options.statDate !== undefined) {
+    url.searchParams.set("stat_date", options.statDate);
+  }
+  if (options.feature !== undefined) {
+    url.searchParams.set("feature", String(options.feature));
+  }
+  if (options.visible !== undefined) {
+    url.searchParams.set("visible", String(options.visible));
+  }
+  if (options.trimUser !== undefined) {
+    url.searchParams.set("trim_user", String(options.trimUser));
+  }
+  if (options.fetchDataOnly !== undefined) {
+    url.searchParams.set("fetch_data_only", String(options.fetchDataOnly));
+  }
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
@@ -198,6 +342,61 @@ async function fetchWeiboStatus(
 
   const result = (await response.json()) as WeiboStatusApiResponse;
   return result;
+}
+
+/**
+ * 格式化单条微博
+ */
+function formatStatusItem(status: WeiboStatusItem) {
+  const formatted: Record<string, unknown> = {
+    id: status.id,
+    mid: status.mid,
+    text: status.text,
+    source: status.source,
+    createdAt: status.created_at,
+    regionName: status.region_name,
+    picIds: status.pic_ids,
+    picNum: status.pic_num,
+    thumbnailPic: status.thumbnail_pic,
+    bmiddlePic: status.bmiddle_pic,
+    originalPic: status.original_pic,
+    visible: status.visible,
+    moreInfoType: status.more_info_type,
+    hasRetweet: !!status.retweeted_status,
+  };
+
+  // 添加用户信息
+  if (status.user) {
+    formatted.user = {
+      id: status.user.id,
+      screenName: status.user.screen_name,
+      name: status.user.name,
+      description: status.user.description,
+      profileImageUrl: status.user.profile_image_url,
+      followersCountStr: status.user.followers_count_str,
+      friendsCount: status.user.friends_count,
+      statusesCount: status.user.statuses_count,
+      verifiedReason: status.user.verified_reason,
+      vvip: status.user.vvip,
+      svip: status.user.svip,
+    };
+  }
+
+  // 添加转发微博信息
+  if (status.retweeted_status) {
+    formatted.retweetedStatus = formatStatusItem(status.retweeted_status);
+  }
+
+  // 添加数字显示策略
+  if (status.number_display_strategy) {
+    formatted.numberDisplayStrategy = {
+      applyScenarioFlag: status.number_display_strategy.apply_scenario_flag,
+      displayTextMinNumber: status.number_display_strategy.display_text_min_number,
+      displayText: status.number_display_strategy.display_text,
+    };
+  }
+
+  return formatted;
 }
 
 /**
@@ -225,20 +424,7 @@ function formatWeiboStatusResult(result: WeiboStatusApiResponse) {
   return {
     success: true,
     total: data.total_number,
-    previousCursor: data.previous_cursor,
-    nextCursor: data.next_cursor,
-    statuses: data.statuses.map((status) => ({
-      id: status.id,
-      mid: status.mid,
-      text: status.text,
-      source: status.source,
-      createdAt: status.created_at,
-      repostsCount: status.reposts_count,
-      commentsCount: status.comments_count,
-      attitudesCount: status.attitudes_count,
-      picUrls: status.pic_urls?.map((p) => p.thumbnail_pic),
-      hasRetweet: !!status.retweeted_status,
-    })),
+    statuses: data.statuses.map(formatStatusItem),
   };
 }
 
@@ -305,12 +491,20 @@ export function registerWeiboStatusTools(api: OpenClawPluginApi) {
             cfg.tokenEndpoint
           );
 
-          const result = await fetchWeiboStatus(
+          const result = await fetchWeiboStatus({
             token,
-            p.count,
-            p.page,
-            cfg.weiboStatusEndpoint
-          );
+            count: p.count,
+            page: p.page,
+            screenName: p.screen_name,
+            startTime: p.start_time,
+            endTime: p.end_time,
+            statDate: p.stat_date,
+            feature: p.feature,
+            visible: p.visible,
+            trimUser: p.trim_user,
+            fetchDataOnly: p.fetch_data_only,
+            endpoint: cfg.weiboStatusEndpoint,
+          });
 
           return json(formatWeiboStatusResult(result));
         } catch (err) {

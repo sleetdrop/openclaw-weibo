@@ -10,63 +10,52 @@ description: |
 
 ## 基本用法
 
-```json
-{}
-```
 
 ## 参数说明
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `count` | number | 否 | 20 | 返回的微博数量，范围 1-100 |
-| `page` | number | 否 | 1 | 页码，从 1 开始 |
+| `token` | string | 是 | - | 认证token |
+| `count` | number | 否 | 20 | 每页数量，最大 100 |
+
 
 ## 返回结果
 
-成功时返回：
+### statuses 数组中的微博对象
 
-```json
-{
-  "success": true,
-  "total": 100,
-  "previousCursor": 0,
-  "nextCursor": 5000000000000001,
-  "statuses": [
-    {
-      "id": "5000000000000000",
-      "mid": "5000000000000000",
-      "text": "微博内容",
-      "source": "微博 weibo.com",
-      "createdAt": "Wed Mar 10 10:00:00 +0800 2026",
-      "repostsCount": 10,
-      "commentsCount": 5,
-      "attitudesCount": 20,
-      "picUrls": ["http://example.com/pic.jpg"],
-      "hasRetweet": false
-    }
-  ]
-}
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | number | 微博唯一 ID（数字格式） |
+| `mid` | string | 微博 ID（字符串格式，与 id 值相同） |
+| `text` | string | 微博正文内容（转发时包含转发评论，如 `//@用户名:评论内容`） |
+| `created_at` | string | 发布时间（格式：`Sun Jan 04 20:07:55 +0800 2026`） |
+| `images` | array | 图片 ID 数组 |
+| `has_image` | boolean | 是否有图片 |
+| `reposts_count` | number | 转发数 |
+| `comments_count` | number | 评论数 |
+| `attitudes_count` | number | 点赞数 |
+| `repost` | object | 被转发的原微博对象（仅转发微博有此字段） |
 
-无内容时返回：
+### repost 对象（被转发的原微博）
 
-```json
-{
-  "success": true,
-  "total": 0,
-  "statuses": [],
-  "message": "没有找到微博内容"
-}
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | number | 微博唯一 ID（数字格式） |
+| `mid` | string | 微博 ID（字符串格式） |
+| `text` | string | 微博正文内容 |
+| `created_at` | string | 发布时间 |
+| `images` | array | 图片 ID 数组 |
+| `has_image` | boolean | 是否有图片 |
+| `reposts_count` | number | 转发数 |
+| `comments_count` | number | 评论数 |
+| `attitudes_count` | number | 点赞数 |
+| `user` | object | 用户信息 |
 
-错误时返回：
+### user 对象（用户信息）
 
-```json
-{
-  "success": false,
-  "error": "获取用户微博失败"
-}
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `screen_name` | string | 用户昵称 |
 
 
 ## 使用示例
@@ -80,32 +69,7 @@ description: |
 ### 获取指定数量的微博
 
 ```json
-{ "count": 50 }
-```
-
-### 分页获取微博
-
-```json
-{ "page": 2, "count": 20 }
-```
-
-### 获取大量微博
-
-```json
-{ "count": 100, "page": 1 }
-```
-
-## 配置（必填）
-
-```json
-{
-  "channels": {
-    "weibo": {
-      "appId": "your_app_id",
-      "appSecret": "your_app_secret",
-    }
-  }
-}
+{ "count": 20 }
 ```
 
 ### 配置项说明
@@ -124,26 +88,11 @@ description: |
 
 ### 获取用户微博
 ```
-GET http://open-im.api.weibo.com/open/weibo/user_status?token={token}&count={数量}&page={页码}
+GET http://open-im.api.weibo.com/open/weibo/user_status?token={token}&count={数量}&page={页码}&screen_name={昵称}&start_time={开始时间}&end_time={结束时间}&stat_date={月份}&feature={过滤类型}&visible={可见性}&trim_user={user开关}&fetch_data_only={仅数据}
 ```
-
-## 返回字段说明
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 微博 ID |
-| `mid` | string | 微博 MID |
-| `text` | string | 微博内容 |
-| `source` | string | 发布来源 |
-| `createdAt` | string | 发布时间 |
-| `repostsCount` | number | 转发数 |
-| `commentsCount` | number | 评论数 |
-| `attitudesCount` | number | 点赞数 |
-| `picUrls` | string[] | 图片 URL 列表 |
-| `hasRetweet` | boolean | 是否为转发微博 |
 
 ## 注意事项
 
 1. 此工具需要配置 `appId` 和 `appSecret` 才能使用
-3. 返回的微博按时间倒序排列（最新的在前）
-4. `count` 参数最大值为 100
+2. 返回的微博按时间倒序排列（最新的在前）
+3. `count` 参数最大值为 100

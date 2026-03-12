@@ -39,6 +39,8 @@ export type WeiboHotSearchApiResponse = {
   code: number;
   message: string;
   data: {
+    callTime?: string;
+    source?: string;
     data: WeiboHotSearchItem[];
   };
 };
@@ -225,6 +227,8 @@ function formatHotSearchResult(result: WeiboHotSearchApiResponse, category: stri
       success: true,
       category,
       total: 0,
+      callTime: data.callTime,
+      source: data.source,
       items: [],
       message: "没有找到热搜内容",
     };
@@ -234,6 +238,8 @@ function formatHotSearchResult(result: WeiboHotSearchApiResponse, category: stri
     success: true,
     category,
     total: data.data.length,
+    callTime: data.callTime,
+    source: data.source,
     items: data.data.map((item) => ({
       rank: item.id,
       word: item.word,

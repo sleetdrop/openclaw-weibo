@@ -33,9 +33,10 @@ export type WeiboSearchApiResponse = {
     status: number;
     status_stage: number;
     version: string;
+    callTime?: string;
+    source?: string;
   };
 };
-
 // 保留旧类型以兼容可能的其他 API 格式
 export type WeiboSearchStatusItem = {
   id: string;
@@ -221,6 +222,8 @@ function formatSearchResult(result: WeiboSearchApiResponse) {
       success: true,
       completed: data.completed,
       noContent: true,
+      callTime: data.callTime,
+      source: data.source,
       message: "没有找到相关内容",
     };
   }
@@ -242,6 +245,8 @@ function formatSearchResult(result: WeiboSearchApiResponse) {
     referenceCount: data.reference_num,
     scheme: data.scheme,
     version: data.version,
+    callTime: data.callTime,
+    source: data.source,
   };
 }
 
