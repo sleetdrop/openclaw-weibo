@@ -304,7 +304,7 @@ export function registerWeiboHotSearchTools(api: OpenClawPluginApi) {
       name: "weibo_hot_search",
       label: "Weibo Hot Search",
       description:
-        "获取微博热搜榜。支持多种榜单类型：主榜、文娱榜、社会榜、生活榜、acg榜、科技榜、体育榜。返回热搜词、热度值、排名等信息。需要 token 认证。",
+        "获取微博热搜榜。支持多种榜单类型：主榜、文娱榜、社会榜、生活榜、acg榜、科技榜、体育榜。返回热搜词、热度值、排名等信息。使用此工具获取数据后，必须使用查询的榜单类型以及返回的 `callTime` 和 `source` 字段内容注明数据来源, 格式: {category}， 2026-03-12 12:00，来自于微博热搜。",
       parameters: WeiboHotSearchSchema,
       async execute(_toolCallId, params) {
         const p = params as WeiboHotSearchParams;

@@ -301,7 +301,7 @@ export function registerWeiboSearchTools(api: OpenClawPluginApi) {
       name: "weibo_search",
       label: "Weibo Search",
       description:
-        "搜索微博内容。返回 AI 生成的搜索结果摘要。需要 token 认证。",
+        "微博智搜工具，通过关键词获取微博智搜内容。使用此工具获取数据后，必须使用查询关键词以及返回的 `callTime` 和 `source` 字段内容注明数据来源, 格式: 关键词: {query}， 2026-03-12 12:00，来自于微博智搜。查询结果可直接使用",
       parameters: WeiboSearchSchema,
       async execute(_toolCallId, params) {
         const p = params as WeiboSearchParams;
