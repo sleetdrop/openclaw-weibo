@@ -14,8 +14,8 @@ const rootPackageJson = JSON.parse(
   fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')
 );
 
-// 生成 dist/package.json（只包含发布需要的字段）
-const distPackageJson = {
+// 公共字段（用于最终发布的 package.json）
+const commonFields = {
   name: rootPackageJson.name,
   version: rootPackageJson.version,
   type: rootPackageJson.type,
@@ -32,14 +32,22 @@ const distPackageJson = {
   ],
   dependencies: rootPackageJson.dependencies,
   bundledDependencies: rootPackageJson.bundledDependencies,
-  peerDependencies: rootPackageJson.peerDependencies,
   openclaw: rootPackageJson.openclaw
 };
 
-// 写入 dist/package.json
+// 第一步：生成用于 npm install 的临时 package.json
+// 只包含 dependencies，不包含 peerDependencies，避免安装 openclaw 及其所有依赖
+const installPackageJson = {
+  name: rootPackageJson.name,
+  version: rootPackageJson.version,
+  type: rootPackageJson.type,
+  dependencies: rootPackageJson.dependencies
+  // 注意：不包含 peerDependencies，这样 npm install 不会安装 openclaw
+};
+
 fs.writeFileSync(
   path.join(distDir, 'package.json'),
-  JSON.stringify(distPackageJson, null, 2)
+  JSON.stringify(installPackageJson, null, 2)
 );
 
 // 复制 openclaw.plugin.json 到 dist/
@@ -67,14 +75,32 @@ if (fs.existsSync(readmePath)) {
 
 // 在 dist 目录下执行 npm install 以安装 bundledDependencies
 console.log('Installing dependencies in dist/ for bundledDependencies...');
-execSync('npm install --omit=dev --ignore-scripts', { 
-  cwd: distDir, 
-  stdio: 'inherit' 
+execSync('npm install --omit=dev --ignore-scripts', {
+  cwd: distDir,
+  stdio: 'inherit'
 });
 
-console.log('dist/package.json generated successfully');
+// 第二步：npm install 完成后，重写 package.json 移除 dependencies
+// 这样用户 npm install 这个包时不会触发额外的依赖下载
+// 所有依赖都已经通过 bundledDependencies 打包在 node_modules 中
+console.log('Rewriting dist/package.json without dependencies for minimal install...');
+const finalPackageJson = { ...commonFields };
+
+fs.writeFileSync(
+  path.join(distDir, 'package.json'),
+  JSON.stringify(finalPackageJson, null, 2)
+);
+
+// 同时删除 dist/package-lock.json，因为不再需要
+const distLockPath = path.join(distDir, 'package-lock.json');
+if (fs.existsSync(distLockPath)) {
+  fs.unlinkSync(distLockPath);
+}
+
+console.log('dist/package.json generated successfully (without dependencies)');
 console.log('Files copied to dist/: openclaw.plugin.json, skills/, README.md');
-console.log('Dependencies installed in dist/node_modules for bundling');
+console.log('Dependencies bundled in dist/node_modules');
+console.log('Users will have zero external dependencies to install!');
 
 function copyDirectory(src, dest) {
   if (!fs.existsSync(dest)) {
