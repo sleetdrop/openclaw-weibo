@@ -18,23 +18,23 @@ openclaw plugins install .
 
 ## macOS / Linux 升级步骤
 
-### 步骤 1：删除旧插件目录
+### 步骤 1：安装新版本插件
+
+```bash
+openclaw plugins install @wecode-ai/weibo-openclaw-plugin
+```
+
+### 步骤 2：删除旧插件目录
 
 ```bash
 rm -rf ~/.openclaw/extensions/weibo
 ```
 
-### 步骤 2：移除旧插件配置
+### 步骤 3：移除旧插件配置
 
 打开配置文件：
 ```bash
 openclaw plugins uninstall weibo
-```
-
-### 步骤 3：安装新版本插件
-
-```bash
-openclaw plugins install @wecode-ai/weibo-openclaw-plugin
 ```
 
 ### 步骤 4：验证安装
@@ -49,7 +49,13 @@ openclaw plugins list
 
 ## Windows 升级步骤
 
-### 步骤 1：：删除旧插件目录
+### 步骤 1：安装新版本插件
+
+```powershell
+openclaw plugins install @wecode-ai/weibo-openclaw-plugin
+```
+
+### 步骤 2：删除旧插件目录
 
 **手动删除删除插件目录下的旧插件目录**
 文件目录
@@ -67,19 +73,13 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.openclaw\extensions\weibo"
 rmdir /s /q "%USERPROFILE%\.openclaw\extensions\weibo"
 ```
 
-### 步骤 2：编辑配置文件，移除旧插件配置
+### 步骤 3：移除旧插件配置
 
 ```powershell
 openclaw plugins uninstall weibo
 ```
 
-### 步骤 2：安装新版本插件
-
-```powershell
-openclaw plugins install @wecode-ai/weibo-openclaw-plugin
-```
-
-### 步骤 3：验证安装
+### 步骤 4：验证安装
 
 ```powershell
 openclaw plugins list
