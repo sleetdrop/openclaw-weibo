@@ -13,7 +13,7 @@ export { sendMessageWeibo } from "./src/send.js";
 export { weiboPlugin } from "./src/channel.js";
 
 const plugin = {
-  id: "weibo",
+  id: "weibo-openclaw-plugin",
   name: "Weibo",
   description: "Weibo DM channel plugin",
   configSchema: { type: "object" as const, properties: {} },
