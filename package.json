@@ -1,6 +1,6 @@
 {
   "name": "@wecode-ai/weibo-openclaw-plugin",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "description": "OpenClaw Weibo DM channel plugin",
   "scripts": {
@@ -10,6 +10,7 @@
     "pack:prepare": "node scripts/prepare-pack.js",
     "pack": "npm run build && cd dist && npm pack",
     "release": "npm run build && cd dist && npm publish --access public --registry=https://registry.npmjs.org/",
+    "release:beta": "npm version prerelease --preid=beta --no-git-tag-version && npm run build && npm publish ./dist --tag beta --access public --registry=https://registry.npmjs.org/",
     "dev": "tsx",
     "sim:server": "tsx weibo-server.ts"
   },
