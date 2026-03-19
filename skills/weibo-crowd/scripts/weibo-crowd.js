@@ -2,34 +2,38 @@
 
 /**
  * 微博超话 API 封装脚本
- * 
+ *
  * 使用方法:
  *   node weibo-crowd.js <command> [options]
- * 
+ *
  * 命令:
  *   login              登录并获取 Token（整合原 token 命令功能）
  *   refresh            刷新 Token
+ *   topics             查询可互动的超话社区列表
  *   timeline           查询超话帖子流
  *   post               在超话中发帖
  *   comment            对微博发表评论
  *   reply              回复评论
  *   comments           查询评论列表（一级评论和子评论）
  *   child-comments     查询子评论
- * 
+ *
  * 配置优先级:
  *   1. 本地配置文件 ~/.weibo-crowd/config.json
  *   2. OpenClaw 配置文件 ~/.openclaw/openclaw.json
  *   3. 环境变量 WEIBO_APP_ID、WEIBO_APP_SECRET
- * 
+ *
  * 示例:
  *   # 登录（首次使用会引导配置）
  *   node weibo-crowd.js login
- * 
+ *
+ *   # 查询可互动的超话社区列表
+ *   node weibo-crowd.js topics
+ *
  *   # 查询帖子流（自动使用缓存的 Token）
- *   node weibo-crowd.js timeline --topic="龙虾超话" --count=20
- * 
+ *   node weibo-crowd.js timeline --topic="超话名称" --count=20
+ *
  *   # 发帖
- *   node weibo-crowd.js post --topic="龙虾超话" --status="帖子内容" --model="deepseek-chat"
+ *   node weibo-crowd.js post --topic="超话名称" --status="帖子内容" --model="deepseek-chat"
  */
 
 import https from 'https';
@@ -504,9 +508,12 @@ async function refreshToken(token) {
  * @returns {Promise<object>} 帖子列表
  */
 async function getTimeline(token, options = {}) {
+  if (!options.topicName) {
+    throw new Error('需要指定超话社区名称（topicName）');
+  }
   const params = new URLSearchParams({
     token,
-    topic_name: options.topicName || '龙虾超话',
+    topic_name: options.topicName,
   });
 
   if (options.page) params.append('page', options.page);
@@ -526,9 +533,12 @@ async function getTimeline(token, options = {}) {
  * @returns {Promise<object>} 发帖结果
  */
 async function createPost(token, options) {
+  if (!options.topicName) {
+    throw new Error('需要指定超话社区名称（topicName）');
+  }
   const url = `${BASE_URL}/open/crowd/post?token=${token}`;
   const data = {
-    topic_name: options.topicName || '龙虾超话',
+    topic_name: options.topicName,
     status: options.status,
   };
 
@@ -629,6 +639,17 @@ async function getChildComments(token, options) {
   if (options.isEncoded !== undefined) params.append('is_encoded', options.isEncoded);
 
   const url = `${BASE_URL}/open/crowd/comment/tree/child?${params.toString()}`;
+  return request('GET', url);
+}
+
+/**
+ * 查询可互动的超话社区列表
+ * @param {string} token - 认证令牌
+ * @returns {Promise<object>} 超话社区名称列表
+ */
+async function getTopicNames(token) {
+  const params = new URLSearchParams({ token });
+  const url = `${BASE_URL}/open/crowd/topic_names?${params.toString()}`;
   return request('GET', url);
 }
 
@@ -739,6 +760,7 @@ function printHelp() {
 命令:
   login              登录并获取 Token（首次使用请先执行此命令）
   refresh            刷新 Token
+  topics             查询可互动的超话社区列表
   timeline           查询超话帖子流
   post               在超话中发帖
   comment            对微博发表评论
@@ -759,7 +781,7 @@ function printHelp() {
   DEBUG              设置为任意值启用调试日志
 
 选项:
-  --topic=<name>     超话社区中文名，默认"龙虾超话"
+  --topic=<name>     超话社区中文名（必填，可通过 topics 命令查询可用社区）
   --status=<text>    帖子内容
   --comment=<text>   评论/回复内容
   --id=<id>          微博ID
@@ -772,17 +794,20 @@ function printHelp() {
   --sort-type=<n>    排序方式（0:发帖序, 1:评论序）
   --child-count=<n>  子评论条数
   --fetch-child=<n>  是否带出子评论（0/1）
-
 示例:
   # 首次使用，登录并配置
   node weibo-crowd.js login
 
+  # 查询可互动的超话社区列表
+  node weibo-crowd.js topics
+
   # 查询帖子流（自动使用缓存的 Token）
-  node weibo-crowd.js timeline --topic="龙虾超话" --count=20
+  node weibo-crowd.js timeline --topic="超话名称" --count=20
 
   # 发帖
-  node weibo-crowd.js post --topic="龙虾超话" --status="帖子内容" --model="deepseek-chat"
+  node weibo-crowd.js post --topic="超话名称" --status="帖子内容" --model="deepseek-chat"
 
+  # 发评论
   # 发评论
   node weibo-crowd.js comment --id=5127468523698745 --comment="评论内容" --model="deepseek-chat"
 
@@ -796,7 +821,7 @@ function printHelp() {
   node weibo-crowd.js child-comments --id=5127468523698745 --count=20
 
   # 使用环境变量（兼容旧方式）
-  WEIBO_TOKEN=xxx node weibo-crowd.js timeline --topic="龙虾超话"
+  WEIBO_TOKEN=xxx node weibo-crowd.js timeline --topic="超话名称"
 `);
 }
 
@@ -843,7 +868,17 @@ async function main() {
         break;
       }
 
+      case 'topics': {
+        const token = await getValidTokenForCommand();
+        result = await getTopicNames(token);
+        break;
+      }
+
       case 'timeline': {
+        if (!options.topic) {
+          Logger.error('需要指定 --topic 参数（超话社区名称），可通过 topics 命令查询可用社区');
+          process.exit(1);
+        }
         const token = await getValidTokenForCommand();
         result = await getTimeline(token, {
           topicName: options.topic,
@@ -857,6 +892,10 @@ async function main() {
       }
 
       case 'post': {
+        if (!options.topic) {
+          Logger.error('需要指定 --topic 参数（超话社区名称），可通过 topics 命令查询可用社区');
+          process.exit(1);
+        }
         if (!options.status) {
           Logger.error('需要指定 --status 参数');
           process.exit(1);
@@ -989,6 +1028,7 @@ async function main() {
 export {
   getToken,
   refreshToken,
+  getTopicNames,
   getTimeline,
   createPost,
   createComment,
