@@ -10,6 +10,16 @@ description: |
 
 ## 基本用法
 
+```json
+{
+  "tool_calls": [
+    {
+      "name": "weibo_status",
+      "arguments": {}
+    }
+  ]
+}
+```
 
 ## 参数说明
 
@@ -62,13 +72,29 @@ description: |
 ### 获取最新微博（默认参数）
 
 ```json
-{}
+{
+  "tool_calls": [
+    {
+      "name": "weibo_status",
+      "arguments": {}
+    }
+  ]
+}
 ```
 
 ### 获取指定数量的微博
 
 ```json
-{ "count": 20 }
+{
+  "tool_calls": [
+    {
+      "name": "weibo_status",
+      "arguments": {
+        "count": 20
+      }
+    }
+  ]
+}
 ```
 
 ### 配置项说明

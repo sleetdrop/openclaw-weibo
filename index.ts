@@ -7,6 +7,7 @@ import { clearTokenCache } from "./src/token.js";
 import { registerWeiboSearchTools } from "./src/weibo-search.js";
 import { registerWeiboStatusTools } from "./src/weibo-status.js";
 import { registerWeiboHotSearchTools } from "./src/weibo-hot-search.js";
+import { registerWeiboTokenTools } from "./src/weibo-token-tool.js";
 
 export { monitorWeiboProvider } from "./src/monitor.js";
 export { sendMessageWeibo } from "./src/send.js";
@@ -20,6 +21,7 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setWeiboRuntime(api.runtime);
     api.registerChannel({ plugin: weiboPlugin });
+    registerWeiboTokenTools(api);
     registerWeiboSearchTools(api);
     registerWeiboStatusTools(api);
     registerWeiboHotSearchTools(api);

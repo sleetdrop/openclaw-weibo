@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { Type, type Static } from "@sinclair/typebox";
+import { getValidWeiboToken, getWeiboTokenConfig } from "./weibo-token-tool.js";
 
 // ============ Schema ============
 
@@ -85,97 +86,6 @@ export type WeiboStatusApiResponse = {
     total_number: number;
   };
 };
-
-// ============ Token Management ============
-
-// Token 过期时间：2小时（7200秒），提前60秒刷新
-const TOKEN_EXPIRE_SECONDS = 7200;
-const TOKEN_REFRESH_BUFFER_SECONDS = 60;
-
-// 默认 token 端点
-const DEFAULT_TOKEN_ENDPOINT = "http://open-im.api.weibo.com/open/auth/ws_token";
-
-type WeiboStatusTokenCache = {
-  token: string;
-  acquiredAt: number;
-  expiresIn: number;
-};
-
-// 专用的 token 缓存
-let weiboStatusTokenCache: WeiboStatusTokenCache | null = null;
-
-type TokenResponse = {
-  data: {
-    token: string;
-    expire_in: number;
-  };
-};
-
-/**
- * 获取 token
- */
-async function fetchWeiboStatusToken(
-  appId: string,
-  appSecret: string,
-  tokenEndpoint?: string
-): Promise<WeiboStatusTokenCache> {
-  const endpoint = tokenEndpoint || DEFAULT_TOKEN_ENDPOINT;
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      app_id: appId,
-      app_secret: appSecret,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(
-      `获取 token 失败: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`
-    );
-  }
-
-  const result = (await response.json()) as TokenResponse;
-
-  if (!result.data?.token) {
-    throw new Error("获取 token 失败: 响应中缺少 token");
-  }
-
-  const tokenCache: WeiboStatusTokenCache = {
-    token: result.data.token,
-    acquiredAt: Date.now(),
-    expiresIn: result.data.expire_in || TOKEN_EXPIRE_SECONDS,
-  };
-
-  weiboStatusTokenCache = tokenCache;
-  return tokenCache;
-}
-
-/**
- * 获取有效的 token
- */
-async function getValidWeiboStatusToken(
-  appId: string,
-  appSecret: string,
-  tokenEndpoint?: string
-): Promise<string> {
-  if (weiboStatusTokenCache) {
-    const expiresAt =
-      weiboStatusTokenCache.acquiredAt +
-      weiboStatusTokenCache.expiresIn * 1000 -
-      TOKEN_REFRESH_BUFFER_SECONDS * 1000;
-    if (Date.now() < expiresAt) {
-      return weiboStatusTokenCache.token;
-    }
-  }
-
-  const tokenResult = await fetchWeiboStatusToken(appId, appSecret, tokenEndpoint);
-  return tokenResult.token;
-}
 
 // ============ Core Functions ============
 
@@ -327,7 +237,8 @@ export function registerWeiboStatusTools(api: OpenClawPluginApi) {
       async execute(_toolCallId, params) {
         const p = params as WeiboStatusParams;
         try {
-          const token = await getValidWeiboStatusToken(
+          // 获取有效的 token（使用共享的 token 工具）
+          const token = await getValidWeiboToken(
             appId,
             appSecret,
             cfg.tokenEndpoint

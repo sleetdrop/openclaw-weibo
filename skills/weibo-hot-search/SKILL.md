@@ -13,7 +13,14 @@ description: |
 
 ```json
 {
-  "category": "主榜"
+  "tool_calls": [
+    {
+      "name": "weibo_hot_search",
+      "arguments": {
+        "category": "主榜"
+      }
+    }
+  ]
 }
 ```
 
@@ -88,25 +95,63 @@ description: |
 ### 获取主榜热搜（默认50条）
 
 ```json
-{ "category": "主榜" }
+{
+  "tool_calls": [
+    {
+      "name": "weibo_hot_search",
+      "arguments": {
+        "category": "主榜"
+      }
+    }
+  ]
+}
 ```
 
 ### 获取文娱榜前10条
 
 ```json
-{ "category": "文娱榜", "count": 10 }
+{
+  "tool_calls": [
+    {
+      "name": "weibo_hot_search",
+      "arguments": {
+        "category": "文娱榜",
+        "count": 10
+      }
+    }
+  ]
+}
 ```
 
 ### 获取科技榜热搜
 
 ```json
-{ "category": "科技榜", "count": 20 }
+{
+  "tool_calls": [
+    {
+      "name": "weibo_hot_search",
+      "arguments": {
+        "category": "科技榜",
+        "count": 20
+      }
+    }
+  ]
+}
 ```
 
 ### 获取体育榜热搜
 
 ```json
-{ "category": "体育榜" }
+{
+  "tool_calls": [
+    {
+      "name": "weibo_hot_search",
+      "arguments": {
+        "category": "体育榜"
+      }
+    }
+  ]
+}
 ```
 
 ## 配置（必填）

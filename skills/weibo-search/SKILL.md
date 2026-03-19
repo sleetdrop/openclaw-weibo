@@ -14,7 +14,14 @@ description: |
 
 ```json
 {
-  "query": "搜索关键词"
+  "tool_calls": [
+    {
+      "name": "weibo_search",
+      "arguments": {
+        "query": "搜索关键词"
+      }
+    }
+  ]
 }
 ```
 
@@ -68,19 +75,32 @@ description: |
 ### 搜索热门话题
 
 ```json
-{ "query": "#人工智能#" }
+{
+  "tool_calls": [
+    {
+      "name": "weibo_search",
+      "arguments": {
+        "query": "#人工智能#"
+      }
+    }
+  ]
+}
 ```
 
-### 搜索新闻事件
-
-```json
-{ "query": "伊朗" }
-```
 
 ### 搜索特定关键词
 
 ```json
-{ "query": "科技新闻" }
+{
+  "tool_calls": [
+    {
+      "name": "weibo_search",
+      "arguments": {
+        "query": "科技新闻"
+      }
+    }
+  ]
+}
 ```
 
 ### 配置项说明
