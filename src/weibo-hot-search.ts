@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { Type, type Static } from "@sinclair/typebox";
+import { getValidWeiboToken, getWeiboTokenConfig } from "./weibo-token-tool.js";
 
 // ============ Schema ============
 
@@ -27,6 +28,17 @@ function json(data: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
     details: data,
   };
+}
+
+function readOptionalNonBlankString(value: unknown): string | undefined {
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return String(value);
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 // ============ API Types ============
@@ -70,102 +82,6 @@ const CATEGORY_MAP: Record<string, string> = {
   科技榜: "v_openclaw_tech",
   体育榜: "v_openclaw_sport",
 };
-
-// ============ Token Management ============
-
-// Token 过期时间：2小时（7200秒），提前60秒刷新
-const TOKEN_EXPIRE_SECONDS = 7200;
-const TOKEN_REFRESH_BUFFER_SECONDS = 60;
-
-// 默认 token 端点
-const DEFAULT_TOKEN_ENDPOINT = "http://open-im.api.weibo.com/open/auth/ws_token";
-
-type HotSearchTokenCache = {
-  token: string;
-  acquiredAt: number;
-  expiresIn: number;
-};
-
-// 热搜专用的 token 缓存
-let hotSearchTokenCache: HotSearchTokenCache | null = null;
-
-type TokenResponse = {
-  data: {
-    token: string;
-    expire_in: number;
-  };
-};
-
-/**
- * 获取热搜用的 token
- * 通过 http://open-im.api.weibo.com/open/auth/ws_token 获取
- * token 过期时间为 2 小时
- */
-async function fetchHotSearchToken(
-  appId: string,
-  appSecret: string,
-  tokenEndpoint?: string
-): Promise<HotSearchTokenCache> {
-  const endpoint = tokenEndpoint || DEFAULT_TOKEN_ENDPOINT;
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      app_id: appId,
-      app_secret: appSecret,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(
-      `获取热搜 token 失败: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`
-    );
-  }
-
-  const result = (await response.json()) as TokenResponse;
-
-  if (!result.data?.token) {
-    throw new Error("获取热搜 token 失败: 响应中缺少 token");
-  }
-
-  const tokenCache: HotSearchTokenCache = {
-    token: result.data.token,
-    acquiredAt: Date.now(),
-    expiresIn: result.data.expire_in || TOKEN_EXPIRE_SECONDS,
-  };
-
-  hotSearchTokenCache = tokenCache;
-  return tokenCache;
-}
-
-/**
- * 获取有效的热搜 token
- * 如果缓存的 token 未过期则返回缓存，否则重新获取
- */
-async function getValidHotSearchToken(
-  appId: string,
-  appSecret: string,
-  tokenEndpoint?: string
-): Promise<string> {
-  // 检查缓存的 token 是否有效
-  if (hotSearchTokenCache) {
-    const expiresAt =
-      hotSearchTokenCache.acquiredAt +
-      hotSearchTokenCache.expiresIn * 1000 -
-      TOKEN_REFRESH_BUFFER_SECONDS * 1000;
-    if (Date.now() < expiresAt) {
-      return hotSearchTokenCache.token;
-    }
-  }
-
-  // 获取新 token
-  const tokenResult = await fetchHotSearchToken(appId, appSecret, tokenEndpoint);
-  return tokenResult.token;
-}
 
 // ============ Core Functions ============
 
@@ -271,10 +187,10 @@ export type WeiboHotSearchConfig = {
 function getHotSearchConfig(api: OpenClawPluginApi): WeiboHotSearchConfig {
   const weiboCfg = api.config?.channels?.weibo as Record<string, unknown> | undefined;
   return {
-    weiboHotSearchEndpoint: weiboCfg?.weiboHotSearchEndpoint as string | undefined,
-    appId: weiboCfg?.appId as string | undefined,
-    appSecret: weiboCfg?.appSecret as string | undefined,
-    tokenEndpoint: weiboCfg?.tokenEndpoint as string | undefined,
+    weiboHotSearchEndpoint: readOptionalNonBlankString(weiboCfg?.weiboHotSearchEndpoint),
+    appId: readOptionalNonBlankString(weiboCfg?.appId),
+    appSecret: readOptionalNonBlankString(weiboCfg?.appSecret),
+    tokenEndpoint: readOptionalNonBlankString(weiboCfg?.tokenEndpoint),
     enabled: weiboCfg?.weiboHotSearchEnabled !== false,
   };
 }
@@ -317,8 +233,8 @@ export function registerWeiboHotSearchTools(api: OpenClawPluginApi) {
             });
           }
 
-          // 获取有效的 token
-          const token = await getValidHotSearchToken(
+          // 获取有效的 token（使用共享的 token 工具）
+          const token = await getValidWeiboToken(
             appId,
             appSecret,
             cfg.tokenEndpoint
