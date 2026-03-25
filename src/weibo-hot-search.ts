@@ -257,5 +257,4 @@ export function registerWeiboHotSearchTools(api: OpenClawPluginApi) {
     }),
     { name: "weibo_hot_search" }
   );
-  api.logger.info?.("weibo_hot_search: Registered weibo_hot_search tool");
 }

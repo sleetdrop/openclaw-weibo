@@ -227,5 +227,4 @@ export function registerWeiboTokenTools(api: OpenClawPluginApi) {
     }),
     { name: "weibo_token" }
   );
-  api.logger.info?.("weibo_token: Registered weibo_token tool");
 }

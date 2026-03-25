@@ -245,5 +245,4 @@ export function registerWeiboSearchTools(api: OpenClawPluginApi) {
     }),
     { name: "weibo_search" }
   );
-  api.logger.info?.("weibo_search: Registered weibo_search tool");
 }

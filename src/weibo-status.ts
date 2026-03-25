@@ -260,5 +260,4 @@ export function registerWeiboStatusTools(api: OpenClawPluginApi) {
     }),
     { name: "weibo_status" }
   );
-  api.logger.info?.("weibo_status: Registered weibo_status tool");
 }
