@@ -9,7 +9,7 @@
  *
  * 版本兼容性：
  * - OpenClaw >= 2026.3.23: 安装最新版本 (2.1.0+)
- * - OpenClaw < 2026.3.23: 安装 2.0.0 版本
+ * - OpenClaw < 2026.3.23: 安装 2.0.1 版本
  */
 
 import { execSync, spawn } from 'child_process';
@@ -17,7 +17,7 @@ import { execSync, spawn } from 'child_process';
 const PACKAGE_NAME = '@wecode-ai/weibo-openclaw-plugin';
 const PLUGIN_NAME = 'weibo-openclaw-plugin';
 const VERSION_THRESHOLD = '2026.3.23';
-const LEGACY_VERSION = '2.0.0';
+const LEGACY_VERSION = '2.0.1';
 
 /**
  * 比较两个版本号

@@ -44,9 +44,7 @@ openclaw config set 'channels.weibo.appId' 'your-appId'
 
 ```json
 {
-...existing config...
   "channels": {
-    ...existing config...
     "weibo": {
       "appId": "your-app-id",
       "appSecret": "your-app-secret"
