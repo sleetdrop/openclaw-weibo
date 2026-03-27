@@ -63,6 +63,7 @@ openclaw config set 'channels.weibo.appId' 'your-appId'
 | `weibo_status` | 获取用户自己发布的微博列表 | `weiboStatusEnabled` |
 | `weibo_hot_search` | 获取微博热搜榜（支持主榜、文娱榜、社会榜等） | `weiboHotSearchEnabled` |
 | `weibo_token` | 微博 API 访问令牌工具，用于获取和管理访问 token | `weiboTokenEnabled` |
+| `weibo_video` | 微博视频上传工具，支持大文件分片上传 | - |
 
 ### 关闭工具
 

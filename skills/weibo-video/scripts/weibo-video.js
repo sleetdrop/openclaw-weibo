@@ -1,45 +1,34 @@
 #!/usr/bin/env node
 
 /**
- * 微博超话 API 封装脚本
+ * 微博视频上传 API 封装脚本
  *
  * 使用方法:
- *   node weibo-crowd.js <command> [options]
+ *   node weibo-video.js <command> [options]
  *
  * 命令:
  *   login              登录并获取 Token（整合原 token 命令功能）
  *   refresh            刷新 Token
- *   topics             查询可互动的超话社区列表
- *   timeline           查询超话帖子流
- *   post               在超话中发帖
- *   comment            对微博发表评论
- *   reply              回复评论
- *   comments           查询评论列表（一级评论和子评论）
- *   child-comments     查询子评论
+ *   upload             上传本地视频文件
  *
  * 配置优先级:
- *   1. 本地配置文件 ~/.weibo-crowd/config.json
+ *   1. 本地配置文件 ~/.weibo-video/config.json
  *   2. OpenClaw 配置文件 ~/.openclaw/openclaw.json
  *   3. 环境变量 WEIBO_APP_ID、WEIBO_APP_SECRET
  *
  * 示例:
  *   # 登录（首次使用会引导配置）
- *   node weibo-crowd.js login
+ *   node weibo-video.js login
  *
- *   # 查询可互动的超话社区列表
- *   node weibo-crowd.js topics
- *
- *   # 查询帖子流（自动使用缓存的 Token）
- *   node weibo-crowd.js timeline --topic="超话名称" --count=20
- *
- *   # 发帖
- *   node weibo-crowd.js post --topic="超话名称" --status="帖子内容" --model="deepseek-chat"
+ *   # 上传视频（自动使用缓存的 Token）
+ *   node weibo-video.js upload --file="/path/to/video.mp4"
  */
 
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
 import fs from 'fs/promises';
+import { createReadStream, statSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
@@ -56,10 +45,16 @@ const __dirname = path.dirname(__filename);
 
 const BASE_URL = 'https://open-im.api.weibo.com';
 
+// 默认分片大小：10MB（与参考代码一致）
+const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024;
+
+// 单位长度：1KB（用于将服务端返回的分片大小从 KB 转换为 Byte）
+const DEFAULT_UNIT_LEN = 1024;
+
 const CONFIG_PATHS = {
   openclaw: path.join(os.homedir(), '.openclaw', 'openclaw.json'),
-  local: path.join(os.homedir(), '.weibo-crowd', 'config.json'),
-  tokenCache: path.join(os.homedir(), '.weibo-crowd', 'token-cache.json')
+  local: path.join(os.homedir(), '.weibo-video', 'config.json'),
+  tokenCache: path.join(os.homedir(), '.weibo-video', 'token-cache.json')
 };
 
 // ============================================================================
@@ -92,9 +87,8 @@ class APIError extends Error {
 
 // 错误码映射
 const ERROR_MESSAGES = {
-  40001: '参数缺失：app_id、topic_name、id 或 cid',
-  40002: '参数缺失或超限：app_secret、status、comment 或 count',
-  40003: 'ai_model_name 超过 64 字符或 sort_type 参数错误',
+  40001: '参数缺失：token、check、name 或 length',
+  40002: '参数缺失或超限',
   40100: 'Token 无效或已过期，请重新登录',
   42900: '频率限制：超过每日调用次数上限，请明天再试',
   50000: '服务器内部错误，请稍后重试',
@@ -113,7 +107,13 @@ const Logger = {
   success: (msg) => console.log(`[SUCCESS] ✓ ${msg}`),
   warn: (msg) => console.warn(`[WARN] ⚠ ${msg}`),
   error: (msg) => console.error(`[ERROR] ✗ ${msg}`),
-  debug: (msg) => process.env.DEBUG && console.log(`[DEBUG] ${msg}`)
+  debug: (msg) => process.env.DEBUG && console.log(`[DEBUG] ${msg}`),
+  progress: (current, total, msg) => {
+    const percent = Math.round((current / total) * 100);
+    const bar = '█'.repeat(Math.floor(percent / 5)) + '░'.repeat(20 - Math.floor(percent / 5));
+    process.stdout.write(`\r[${bar}] ${percent}% ${msg}`);
+    if (current === total) console.log();
+  }
 };
 
 // ============================================================================
@@ -393,7 +393,7 @@ function prompt(question) {
  * @returns {Promise<object>} 配置对象
  */
 async function interactiveConfig() {
-  console.log('\n=== 微博超话配置向导 ===\n');
+  console.log('\n=== 微博视频上传配置向导 ===\n');
   console.log('请输入您的微博应用凭证信息。');
   console.log('如果您还没有凭证，请私信 @微博龙虾助手 发送 "连接龙虾" 获取。\n');
 
@@ -467,6 +467,54 @@ function request(method, url, data = null) {
 }
 
 /**
+ * 发送带二进制数据的 HTTP 请求
+ * @param {string} url - 请求 URL
+ * @param {Buffer} data - 二进制数据
+ * @returns {Promise<object>} 响应数据
+ */
+function requestWithBinary(url, data) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const isHttps = urlObj.protocol === 'https:';
+    const httpModule = isHttps ? https : http;
+
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': data.length,
+        'Accept': 'application/json',
+      },
+    };
+
+    const req = httpModule.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(body);
+          resolve(json);
+        } catch (e) {
+          reject(new Error(`解析响应失败: ${body}`));
+        }
+      });
+    });
+
+    req.on('error', (e) => {
+      reject(e);
+    });
+
+    req.write(data);
+    req.end();
+  });
+}
+
+/**
  * 处理 API 响应错误
  * @param {object} result - API 响应
  * @returns {object} 原始响应（如果成功）
@@ -479,6 +527,53 @@ function handleAPIError(result) {
   const retryable = RETRYABLE_ERRORS.has(result.code);
   
   throw new APIError(message, result.code, retryable);
+}
+
+// ============================================================================
+// 文件工具函数
+// ============================================================================
+
+/**
+ * 计算文件的 MD5 校验值
+ * @param {string} filePath - 文件路径
+ * @returns {Promise<string>} MD5 校验值（十六进制）
+ */
+async function calculateFileMD5(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('md5');
+    const stream = createReadStream(filePath);
+    
+    stream.on('data', (data) => hash.update(data));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+/**
+ * 计算 Buffer 的 MD5 校验值
+ * @param {Buffer} buffer - 数据缓冲区
+ * @returns {string} MD5 校验值（十六进制）
+ */
+function calculateBufferMD5(buffer) {
+  return crypto.createHash('md5').update(buffer).digest('hex');
+}
+
+/**
+ * 读取文件分片
+ * @param {string} filePath - 文件路径
+ * @param {number} start - 起始位置
+ * @param {number} size - 分片大小
+ * @returns {Promise<Buffer>} 分片数据
+ */
+async function readFileChunk(filePath, start, size) {
+  const fileHandle = await fs.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(size);
+    const { bytesRead } = await fileHandle.read(buffer, 0, size, start);
+    return buffer.slice(0, bytesRead);
+  } finally {
+    await fileHandle.close();
+  }
 }
 
 // ============================================================================
@@ -512,159 +607,171 @@ async function refreshToken(token) {
 }
 
 /**
- * 查询超话帖子流
+ * 初始化视频上传
  * @param {string} token - 认证令牌
- * @param {object} options - 查询选项
- * @returns {Promise<object>} 帖子列表
+ * @param {object} options - 上传选项
+ * @returns {Promise<object>} 初始化结果
  */
-async function getTimeline(token, options = {}) {
-  if (!options.topicName) {
-    throw new Error('需要指定超话社区名称（topicName）');
-  }
+async function initVideoUpload(token, options) {
   const params = new URLSearchParams({
     token,
-    topic_name: options.topicName,
+    check: options.check,
+    name: options.name,
+    length: options.length.toString(),
   });
 
-  if (options.page) params.append('page', options.page);
-  if (options.count) params.append('count', options.count);
-  if (options.sinceId) params.append('since_id', options.sinceId);
-  if (options.maxId) params.append('max_id', options.maxId);
-  if (options.sortType !== undefined) params.append('sort_type', options.sortType);
+  // 可选参数
+  if (options.type) params.append('type', options.type);
+  if (options.videoType) params.append('video_type', options.videoType);
+  if (options.uploadOnly !== undefined) params.append('upload_only', options.uploadOnly.toString());
+  if (options.customNameSupport !== undefined) params.append('custom_name_support', options.customNameSupport.toString());
+  if (options.mediaprops) params.append('mediaprops', JSON.stringify(options.mediaprops));
 
-  const url = `${BASE_URL}/open/crowd/timeline?${params.toString()}`;
+  const url = `${BASE_URL}/open/video/init?${params.toString()}`;
   return request('GET', url);
 }
 
 /**
- * 在超话中发帖
+ * 上传视频分片
  * @param {string} token - 认证令牌
- * @param {object} options - 发帖选项
- * @returns {Promise<object>} 发帖结果
+ * @param {object} options - 分片选项
+ * @param {Buffer} chunkData - 分片数据
+ * @returns {Promise<object>} 上传结果
  */
-async function createPost(token, options) {
-  if (!options.topicName) {
-    throw new Error('需要指定超话社区名称（topicName）');
-  }
-  const url = `${BASE_URL}/open/crowd/post?token=${token}`;
-  const data = {
-    topic_name: options.topicName,
-    status: options.status,
-  };
-
-  if (options.aiModelName) {
-    data.ai_model_name = options.aiModelName;
-  }
-
-  if (options.mediaId) {
-    data.media_id = options.mediaId;
-  }
-
-  return request('POST', url, data);
-}
-
-/**
- * 对微博发表评论
- * @param {string} token - 认证令牌
- * @param {object} options - 评论选项
- * @returns {Promise<object>} 评论结果
- */
-async function createComment(token, options) {
-  const url = `${BASE_URL}/open/crowd/comment?token=${token}`;
-  const data = {
-    id: options.id,
-    comment: options.comment,
-  };
-
-  if (options.aiModelName) data.ai_model_name = options.aiModelName;
-  if (options.commentOri !== undefined) data.comment_ori = options.commentOri;
-  if (options.isRepost !== undefined) data.is_repost = options.isRepost;
-
-  return request('POST', url, data);
-}
-
-/**
- * 回复评论
- * @param {string} token - 认证令牌
- * @param {object} options - 回复选项
- * @returns {Promise<object>} 回复结果
- */
-async function replyComment(token, options) {
-  const url = `${BASE_URL}/open/crowd/comment/reply?token=${token}`;
-  const data = {
-    cid: options.cid,
-    id: options.id,
-    comment: options.comment,
-  };
-
-  if (options.aiModelName) data.ai_model_name = options.aiModelName;
-  if (options.withoutMention !== undefined) data.without_mention = options.withoutMention;
-  if (options.commentOri !== undefined) data.comment_ori = options.commentOri;
-  if (options.isRepost !== undefined) data.is_repost = options.isRepost;
-
-  return request('POST', url, data);
-}
-
-/**
- * 查询评论列表（一级评论和子评论）
- * @param {string} token - 认证令牌
- * @param {object} options - 查询选项
- * @returns {Promise<object>} 评论列表
- */
-async function getComments(token, options) {
+async function uploadVideoChunk(token, options, chunkData) {
   const params = new URLSearchParams({
     token,
-    id: options.id,
+    filetoken: options.fileToken,
+    filelength: options.fileLength.toString(),
+    filecheck: options.fileCheck,
+    chunksize: options.chunkSize.toString(),
+    startloc: options.startLoc.toString(),
+    chunkindex: options.chunkIndex.toString(),
+    chunkcount: options.chunkCount.toString(),
+    sectioncheck: options.sectionCheck,
   });
 
-  if (options.sinceId) params.append('since_id', options.sinceId);
-  if (options.maxId) params.append('max_id', options.maxId);
-  if (options.page) params.append('page', options.page);
-  if (options.count) params.append('count', options.count);
-  if (options.childCount) params.append('child_count', options.childCount);
-  if (options.fetchChild !== undefined) params.append('fetch_child', options.fetchChild);
-  if (options.isAsc !== undefined) params.append('is_asc', options.isAsc);
-  if (options.trimUser !== undefined) params.append('trim_user', options.trimUser);
-  if (options.isEncoded !== undefined) params.append('is_encoded', options.isEncoded);
+  // 可选参数
+  if (options.type) params.append('type', options.type);
+  if (options.videoType) params.append('video_type', options.videoType);
 
-  const url = `${BASE_URL}/open/crowd/comment/tree/root_child?${params.toString()}`;
-  return request('GET', url);
+  const url = `${BASE_URL}/open/video/upload?${params.toString()}`;
+  return requestWithBinary(url, chunkData);
 }
 
 /**
- * 查询子评论
+ * 上传视频文件（完整流程）
  * @param {string} token - 认证令牌
- * @param {object} options - 查询选项
- * @returns {Promise<object>} 子评论列表
+ * @param {string} filePath - 视频文件路径
+ * @param {object} options - 上传选项
+ * @returns {Promise<object>} 上传结果
  */
-async function getChildComments(token, options) {
-  const params = new URLSearchParams({
-    token,
-    id: options.id,
+async function uploadVideo(token, filePath, options = {}) {
+  // 获取文件信息
+  const stats = statSync(filePath);
+  const fileLength = stats.size;
+  const fileName = path.basename(filePath);
+  
+  Logger.info(`准备上传视频: ${fileName}`);
+  Logger.info(`文件大小: ${(fileLength / 1024 / 1024).toFixed(2)} MB`);
+  
+  // 计算文件 MD5
+  Logger.info('计算文件校验值...');
+  const fileMD5 = await calculateFileMD5(filePath);
+  Logger.debug(`文件 MD5: ${fileMD5}`);
+  
+  // 初始化上传
+  Logger.info('初始化上传...');
+  const initResult = await initVideoUpload(token, {
+    check: fileMD5,
+    name: fileName,
+    length: fileLength,
+    type: options.type || 'video',
+    videoType: options.videoType || 'normal',
+    uploadOnly: options.uploadOnly,
+    customNameSupport: options.customNameSupport,
+    mediaprops: options.mediaprops,
   });
-
-  if (options.sinceId) params.append('since_id', options.sinceId);
-  if (options.maxId) params.append('max_id', options.maxId);
-  if (options.page) params.append('page', options.page);
-  if (options.count) params.append('count', options.count);
-  if (options.trimUser !== undefined) params.append('trim_user', options.trimUser);
-  if (options.needRootComment !== undefined) params.append('need_root_comment', options.needRootComment);
-  if (options.isAsc !== undefined) params.append('is_asc', options.isAsc);
-  if (options.isEncoded !== undefined) params.append('is_encoded', options.isEncoded);
-
-  const url = `${BASE_URL}/open/crowd/comment/tree/child?${params.toString()}`;
-  return request('GET', url);
-}
-
-/**
- * 查询可互动的超话社区列表
- * @param {string} token - 认证令牌
- * @returns {Promise<object>} 超话社区名称列表
- */
-async function getTopicNames(token) {
-  const params = new URLSearchParams({ token });
-  const url = `${BASE_URL}/open/crowd/topic_names?${params.toString()}`;
-  return request('GET', url);
+  
+  if (initResult.code !== 0) {
+    throw new APIError(
+      ERROR_MESSAGES[initResult.code] || initResult.message || '初始化上传失败',
+      initResult.code,
+      RETRYABLE_ERRORS.has(initResult.code)
+    );
+  }
+  
+  const { fileToken, mediaId } = initResult.data;
+  Logger.debug(`fileToken: ${fileToken}`);
+  Logger.debug(`mediaId: ${mediaId}`);
+  
+  // 计算分片大小（服务端返回的 length 单位是 KB，需要转换为 Byte）
+  // 如果服务端没有返回 length，使用默认分片大小
+  let pieceSize = initResult.data.length
+    ? initResult.data.length * DEFAULT_UNIT_LEN
+    : DEFAULT_CHUNK_SIZE;
+  
+  // 如果分片大小大于等于文件大小，使用文件大小作为分片大小
+  if (pieceSize >= fileLength) {
+    pieceSize = fileLength;
+  }
+  
+  Logger.debug(`分片大小: ${(pieceSize / 1024 / 1024).toFixed(2)} MB`);
+  
+  // 计算分片数量
+  const chunkCount = Math.ceil(fileLength / pieceSize);
+  Logger.info(`分片数量: ${chunkCount}`);
+  
+  // 上传分片
+  let uploadResult = null;
+  for (let i = 0; i < chunkCount; i++) {
+    const chunkIndex = i + 1;
+    const startLoc = i * pieceSize;
+    const currentChunkSize = Math.min(pieceSize, fileLength - startLoc);
+    
+    // 读取分片数据
+    const chunkData = await readFileChunk(filePath, startLoc, currentChunkSize);
+    const sectionCheck = calculateBufferMD5(chunkData);
+    
+    Logger.progress(chunkIndex, chunkCount, `上传分片 ${chunkIndex}/${chunkCount}`);
+    
+    uploadResult = await uploadVideoChunk(token, {
+      fileToken,
+      fileLength,
+      fileCheck: fileMD5,
+      chunkSize: chunkData.length,
+      startLoc,
+      chunkIndex,
+      chunkCount,
+      sectionCheck,
+      type: options.type || 'video',
+      videoType: options.videoType || 'normal',
+    }, chunkData);
+    
+    if (uploadResult.code !== 0) {
+      throw new APIError(
+        ERROR_MESSAGES[uploadResult.code] || uploadResult.message || `上传分片 ${chunkIndex} 失败`,
+        uploadResult.code,
+        RETRYABLE_ERRORS.has(uploadResult.code)
+      );
+    }
+  }
+  
+  // 返回最终结果
+  if (uploadResult && uploadResult.data && uploadResult.data.complete) {
+    Logger.success('视频上传完成！');
+    return {
+      code: 0,
+      message: 'success',
+      data: {
+        mediaId,
+        fmid: uploadResult.data.fmid,
+        url: uploadResult.data.url,
+      }
+    };
+  }
+  
+  return uploadResult;
 }
 
 // ============================================================================
@@ -675,7 +782,7 @@ async function getTopicNames(token) {
  * 处理 login 命令
  */
 async function handleLoginCommand() {
-  console.log('\n=== 微博超话登录 ===\n');
+  console.log('\n=== 微博视频上传登录 ===\n');
 
   // 加载配置
   let config = await loadConfig();
@@ -705,7 +812,7 @@ async function handleLoginCommand() {
     console.log(`有效期: ${tokenManager.tokenCache.expiresIn} 秒 (约 ${(tokenManager.tokenCache.expiresIn / 3600).toFixed(1)} 小时)`);
     console.log(`过期时间: ${new Date(tokenManager.tokenCache.acquiredAt + tokenManager.tokenCache.expiresIn * 1000).toLocaleString()}`);
     
-    // 输出 JSON 格式（兼容原 token 命令的输出）
+    // 输出 JSON 格式
     console.log('\n--- Token 信息（JSON 格式）---');
     console.log(JSON.stringify({
       code: 0,
@@ -737,7 +844,7 @@ async function getValidTokenForCommand() {
   const config = await loadConfig();
   
   if (!config.appId || !config.appSecret) {
-    throw new ConfigError('未找到配置信息，请先运行 "node weibo-crowd.js login" 进行登录');
+    throw new ConfigError('未找到配置信息，请先运行 "node weibo-video.js login" 进行登录');
   }
 
   return await tokenManager.getValidToken(config.appId, config.appSecret);
@@ -766,25 +873,19 @@ function parseArgs(args) {
  */
 function printHelp() {
   console.log(`
-微博超话 API 封装脚本
+微博视频上传 API 封装脚本
 
 使用方法:
-  node weibo-crowd.js <command> [options]
+  node weibo-video.js <command> [options]
 
 命令:
   login              登录并获取 Token（首次使用请先执行此命令）
   refresh            刷新 Token
-  topics             查询可互动的超话社区列表
-  timeline           查询超话帖子流
-  post               在超话中发帖
-  comment            对微博发表评论
-  reply              回复评论
-  comments           查询评论列表（一级评论和子评论）
-  child-comments     查询子评论
+  upload             上传本地视频文件
   help               显示帮助信息
 
 配置优先级:
-  1. 本地配置文件 ~/.weibo-crowd/config.json
+  1. 本地配置文件 ~/.weibo-video/config.json
   2. OpenClaw 配置文件 ~/.openclaw/openclaw.json
   3. 环境变量 WEIBO_APP_ID、WEIBO_APP_SECRET
 
@@ -795,51 +896,21 @@ function printHelp() {
   DEBUG              设置为任意值启用调试日志
 
 选项:
-  --topic=<name>     超话社区中文名（必填，可通过 topics 命令查询可用社区）
-  --status=<text>    帖子内容
-  --media-id=<id>    视频媒体ID（通过 weibo-video 技能上传视频后获取，用于发视频帖子）
-  --comment=<text>   评论/回复内容
-  --id=<id>          微博ID
-  --cid=<id>         评论ID（回复评论时使用）
-  --model=<name>     AI模型名称
-  --count=<n>        每页条数
-  --page=<n>         页码
-  --since-id=<id>    起始ID
-  --max-id=<id>      最大ID
-  --sort-type=<n>    排序方式（0:发帖序, 1:评论序）
-  --child-count=<n>  子评论条数
-  --fetch-child=<n>  是否带出子评论（0/1）
+  --file=<path>      视频文件路径（必填）
+  --type=<type>      文件类型，默认 video（可选）
+  --video-type=<type> 视频类型，默认 normal（可选）
+  --upload-only      是否仅上传，默认 false（可选）
+  --custom-name      是否支持自定义名称，默认 false（可选）
 
 示例:
   # 首次使用，登录并配置
-  node weibo-crowd.js login
+  node weibo-video.js login
 
-  # 查询可互动的超话社区列表
-  node weibo-crowd.js topics
-
-  # 查询帖子流（自动使用缓存的 Token）
-  node weibo-crowd.js timeline --topic="超话名称" --count=20
-
-  # 发帖
-  node weibo-crowd.js post --topic="超话名称" --status="帖子内容" --model="deepseek-chat"
-
-  # 发视频帖子（media_id 通过 weibo-video 技能上传视频后获取）
-  node weibo-crowd.js post --topic="超话名称" --status="视频帖子内容" --media-id="xxx" --model="deepseek-chat"
-
-  # 发评论
-  node weibo-crowd.js comment --id=5127468523698745 --comment="评论内容" --model="deepseek-chat"
-
-  # 回复评论
-  node weibo-crowd.js reply --cid=5127468523698745 --id=5127468523698745 --comment="回复内容" --model="deepseek-chat"
-
-  # 查询评论列表
-  node weibo-crowd.js comments --id=5127468523698745 --count=20
-
-  # 查询子评论
-  node weibo-crowd.js child-comments --id=5127468523698745 --count=20
+  # 上传视频（自动使用缓存的 Token）
+  node weibo-video.js upload --file="/path/to/video.mp4"
 
   # 使用环境变量（兼容旧方式）
-  WEIBO_TOKEN=xxx node weibo-crowd.js timeline --topic="超话名称"
+  WEIBO_TOKEN=xxx node weibo-video.js upload --file="/path/to/video.mp4"
 `);
 }
 
@@ -886,150 +957,33 @@ async function main() {
         break;
       }
 
-      case 'topics': {
+      case 'upload': {
+        if (!options.file) {
+          Logger.error('需要指定 --file 参数（视频文件路径）');
+          process.exit(1);
+        }
+        
+        // 检查文件是否存在
+        try {
+          await fs.access(options.file);
+        } catch (err) {
+          Logger.error(`文件不存在: ${options.file}`);
+          process.exit(1);
+        }
+        
         const token = await getValidTokenForCommand();
-        result = await getTopicNames(token);
-        break;
-      }
-
-      case 'timeline': {
-        if (!options.topic) {
-          Logger.error('需要指定 --topic 参数（超话社区名称），可通过 topics 命令查询可用社区');
-          process.exit(1);
-        }
-        const token = await getValidTokenForCommand();
-        result = await getTimeline(token, {
-          topicName: options.topic,
-          page: options.page,
-          count: options.count,
-          sinceId: options['since-id'],
-          maxId: options['max-id'],
-          sortType: options['sort-type'],
-        });
-        break;
-      }
-
-      case 'post': {
-        if (!options.topic) {
-          Logger.error('需要指定 --topic 参数（超话社区名称），可通过 topics 命令查询可用社区');
-          process.exit(1);
-        }
-        if (!options.status) {
-          Logger.error('需要指定 --status 参数');
-          process.exit(1);
-        }
-        if (!options.model) {
-          Logger.error('需要指定 --model 参数（AI模型名称）');
-          process.exit(1);
-        }
-        const token = await getValidTokenForCommand();
-        result = await createPost(token, {
-          topicName: options.topic,
-          status: options.status,
-          aiModelName: options.model,
-          mediaId: options['media-id'],
-        });
-        break;
-      }
-
-      case 'comment': {
-        if (!options.id) {
-          Logger.error('需要指定 --id 参数（微博ID）');
-          process.exit(1);
-        }
-        if (!options.comment) {
-          Logger.error('需要指定 --comment 参数');
-          process.exit(1);
-        }
-        if (!options.model) {
-          Logger.error('需要指定 --model 参数（AI模型名称）');
-          process.exit(1);
-        }
-        const token = await getValidTokenForCommand();
-        result = await createComment(token, {
-          id: Number(options.id),
-          comment: options.comment,
-          aiModelName: options.model,
-          commentOri: options['comment-ori'] !== undefined ? Number(options['comment-ori']) : undefined,
-          isRepost: options['is-repost'] !== undefined ? Number(options['is-repost']) : undefined,
-        });
-        break;
-      }
-
-      case 'reply': {
-        if (!options.cid) {
-          Logger.error('需要指定 --cid 参数（评论ID）');
-          process.exit(1);
-        }
-        if (!options.id) {
-          Logger.error('需要指定 --id 参数（微博ID）');
-          process.exit(1);
-        }
-        if (!options.comment) {
-          Logger.error('需要指定 --comment 参数');
-          process.exit(1);
-        }
-        if (!options.model) {
-          Logger.error('需要指定 --model 参数（AI模型名称）');
-          process.exit(1);
-        }
-        const token = await getValidTokenForCommand();
-        result = await replyComment(token, {
-          cid: Number(options.cid),
-          id: Number(options.id),
-          comment: options.comment,
-          aiModelName: options.model,
-          withoutMention: options['without-mention'] !== undefined ? Number(options['without-mention']) : undefined,
-          commentOri: options['comment-ori'] !== undefined ? Number(options['comment-ori']) : undefined,
-          isRepost: options['is-repost'] !== undefined ? Number(options['is-repost']) : undefined,
-        });
-        break;
-      }
-
-      case 'comments': {
-        if (!options.id) {
-          Logger.error('需要指定 --id 参数（微博ID）');
-          process.exit(1);
-        }
-        const token = await getValidTokenForCommand();
-        result = await getComments(token, {
-          id: Number(options.id),
-          sinceId: options['since-id'],
-          maxId: options['max-id'],
-          page: options.page,
-          count: options.count,
-          childCount: options['child-count'],
-          fetchChild: options['fetch-child'] !== undefined ? Number(options['fetch-child']) : undefined,
-          isAsc: options['is-asc'] !== undefined ? Number(options['is-asc']) : undefined,
-          trimUser: options['trim-user'] !== undefined ? Number(options['trim-user']) : undefined,
-          isEncoded: options['is-encoded'] !== undefined ? Number(options['is-encoded']) : undefined,
-        });
-        break;
-      }
-
-      case 'child-comments': {
-        if (!options.id) {
-          Logger.error('需要指定 --id 参数（评论楼层ID）');
-          process.exit(1);
-        }
-        const token = await getValidTokenForCommand();
-        result = await getChildComments(token, {
-          id: Number(options.id),
-          sinceId: options['since-id'],
-          maxId: options['max-id'],
-          page: options.page,
-          count: options.count,
-          trimUser: options['trim-user'] !== undefined ? Number(options['trim-user']) : undefined,
-          needRootComment: options['need-root-comment'] !== undefined ? Number(options['need-root-comment']) : undefined,
-          isAsc: options['is-asc'] !== undefined ? Number(options['is-asc']) : undefined,
-          isEncoded: options['is-encoded'] !== undefined ? Number(options['is-encoded']) : undefined,
+        result = await uploadVideo(token, options.file, {
+          type: options.type,
+          videoType: options['video-type'],
+          uploadOnly: options['upload-only'] === 'true' || options['upload-only'] === true,
+          customNameSupport: options['custom-name'] === 'true' || options['custom-name'] === true,
         });
         break;
       }
 
       default:
         Logger.error(`未知命令: ${command}`);
-        console.log('使用 "node weibo-crowd.js help" 查看帮助信息');
+        console.log('使用 "node weibo-video.js help" 查看帮助信息');
         process.exit(1);
     }
 
@@ -1059,19 +1013,19 @@ async function main() {
 export {
   getToken,
   refreshToken,
-  getTopicNames,
-  getTimeline,
-  createPost,
-  createComment,
-  replyComment,
-  getComments,
-  getChildComments,
+  initVideoUpload,
+  uploadVideoChunk,
+  uploadVideo,
   loadConfig,
   saveLocalConfig,
   TokenManager,
   encrypt,
   decrypt,
   CONFIG_PATHS,
+  DEFAULT_CHUNK_SIZE,
+  DEFAULT_UNIT_LEN,
+  calculateFileMD5,
+  calculateBufferMD5,
 };
 
 // 如果直接运行脚本，执行主函数
