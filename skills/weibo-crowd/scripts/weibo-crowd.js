@@ -21,7 +21,6 @@
  * 配置优先级:
  *   1. 本地配置文件 ~/.weibo-crowd/config.json
  *   2. OpenClaw 配置文件 ~/.openclaw/openclaw.json
- *   3. 环境变量 WEIBO_APP_ID、WEIBO_APP_SECRET
  *
  * 示例:
  *   # 登录（首次使用会引导配置）
@@ -109,12 +108,14 @@ const RETRYABLE_ERRORS = new Set([50000, 50001]);
 // 日志工具
 // ============================================================================
 
+const debugEnabled = process.argv.includes('--debug');
+
 const Logger = {
   info: (msg) => console.log(`[INFO] ${msg}`),
   success: (msg) => console.log(`[SUCCESS] ✓ ${msg}`),
   warn: (msg) => console.warn(`[WARN] ⚠ ${msg}`),
   error: (msg) => console.error(`[ERROR] ✗ ${msg}`),
-  debug: (msg) => process.env.DEBUG && console.log(`[DEBUG] ${msg}`)
+  debug: (msg) => debugEnabled && console.log(`[DEBUG] ${msg}`)
 };
 
 // ============================================================================
@@ -188,10 +189,7 @@ function decrypt(encryptedText) {
  * @returns {Promise<object>} 配置对象
  */
 async function loadConfig() {
-  const config = {
-    appId: process.env.WEIBO_APP_ID,
-    appSecret: process.env.WEIBO_APP_SECRET
-  };
+  const config = {};
 
   // 尝试读取 OpenClaw 配置
   try {
@@ -199,8 +197,8 @@ async function loadConfig() {
     const openclawConfig = JSON.parse(openclawData);
     const weiboConfig = openclawConfig.channels?.weibo;
     if (weiboConfig) {
-      config.appId = config.appId || weiboConfig.appId;
-      config.appSecret = config.appSecret || weiboConfig.appSecret;
+      config.appId = weiboConfig.appId;
+      config.appSecret = weiboConfig.appSecret;
     }
   } catch (err) {
     Logger.debug('OpenClaw 配置不存在或读取失败');
@@ -743,14 +741,7 @@ async function handleLoginCommand() {
  * @returns {Promise<string>} Token
  */
 async function getValidTokenForCommand() {
-  // 优先使用环境变量中的 Token
-  const envToken = process.env.WEIBO_TOKEN;
-  if (envToken) {
-    Logger.debug('使用环境变量中的 Token');
-    return envToken;
-  }
-
-  // 尝试从配置获取 Token
+  // 从配置获取 Token
   const config = await loadConfig();
   
   if (!config.appId || !config.appSecret) {
@@ -804,13 +795,6 @@ function printHelp() {
 配置优先级:
   1. 本地配置文件 ~/.weibo-crowd/config.json
   2. OpenClaw 配置文件 ~/.openclaw/openclaw.json
-  3. 环境变量 WEIBO_APP_ID、WEIBO_APP_SECRET
-
-环境变量:
-  WEIBO_APP_ID       开发者应用ID
-  WEIBO_APP_SECRET   开发者应用密钥
-  WEIBO_TOKEN        认证令牌（可选，如果已有token）
-  DEBUG              设置为任意值启用调试日志
 
 选项:
   --topic=<name>     超话社区中文名（必填，可通过 topics 命令查询可用社区）
@@ -828,6 +812,7 @@ function printHelp() {
   --sort-type=<n>    排序方式（0:发帖序, 1:评论序）
   --child-count=<n>  子评论条数
   --fetch-child=<n>  是否带出子评论（0/1）
+  --debug            启用调试日志
 
 示例:
   # 首次使用，登录并配置
@@ -862,9 +847,6 @@ function printHelp() {
 
   # 查询子评论
   node weibo-crowd.js child-comments --id=5127468523698745 --count=20
-
-  # 使用环境变量（兼容旧方式）
-  WEIBO_TOKEN=xxx node weibo-crowd.js timeline --topic="超话名称"
 `);
 }
 

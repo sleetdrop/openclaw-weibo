@@ -4,8 +4,8 @@
  * 自动检测 openclaw 版本并安装/更新对应版本的 weibo-openclaw-plugin
  *
  * 用法：
- *   npx @wecode-ai/weibo-openclaw-plugin          # 安装插件
- *   npx @wecode-ai/weibo-openclaw-plugin update   # 更新插件
+ *   npx @wecode-ai/weibo-plugin-installer          # 安装插件
+ *   npx @wecode-ai/weibo-plugin-installer update   # 更新插件
  *
  * 版本兼容性：
  * - OpenClaw >= 2026.3.23: 安装最新版本 (2.1.0+)
@@ -15,6 +15,7 @@
 import { execSync, spawn } from 'child_process';
 
 const PACKAGE_NAME = '@wecode-ai/weibo-openclaw-plugin';
+const INSTALLER_NAME = '@wecode-ai/weibo-plugin-installer';
 const PLUGIN_NAME = 'weibo-openclaw-plugin';
 const VERSION_THRESHOLD = '2026.3.23';
 const LEGACY_VERSION = '2.0.1';
@@ -99,9 +100,9 @@ function showHelp() {
 微博 OpenClaw 插件安装工具
 
 用法：
-  npx ${PACKAGE_NAME}              安装插件（自动检测版本）
-  npx ${PACKAGE_NAME} update       更新插件到最新兼容版本
-  npx ${PACKAGE_NAME} help         显示此帮助信息
+  npx ${INSTALLER_NAME}              安装插件（自动检测版本）
+  npx ${INSTALLER_NAME} update       更新插件到最新兼容版本
+  npx ${INSTALLER_NAME} help         显示此帮助信息
 
 版本兼容性：
   OpenClaw >= ${VERSION_THRESHOLD}: 安装最新版本的插件

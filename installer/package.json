@@ -1,0 +1,10 @@
+{
+  "name": "@wecode-ai/weibo-plugin-installer",
+  "version": "2.1.2",
+  "type": "module",
+  "description": "Installer helper for weibo-openclaw-plugin",
+  "bin": {
+    "weibo-plugin-installer": "./install.js"
+  },
+  "license": "MIT"
+}
